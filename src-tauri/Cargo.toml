@@ -1,0 +1,47 @@
+[package]
+name = "sync-mongo-app"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "sync_mongo_app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+mongodb = "3"
+bson = { version = "2", features = ["chrono-0_4"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+sha2 = "0.10"
+hex = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+dirs = "5"
+futures-util = "0.3"
+uuid = { version = "1", features = ["v4"] }
+tauri-plugin-fs = "2"
+tauri-plugin-dialog = "2"
+urlencoding = "2"
+keyring = "4.1.5"
+russh = { version = "0.62.4", default-features = false, features = ["ring", "rsa", "flate2"] }
+glob = "0.3"
+shell-words = "1.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

@@ -35,6 +35,28 @@ const inputClass =
 
 const labelClass = "block text-sm font-medium mb-1";
 
+function FormSection({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="rounded-xl border bg-card">
+      <div className="border-b px-4 py-3">
+        <h3 className="text-sm font-semibold">{title}</h3>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+          {description}
+        </p>
+      </div>
+      <div className="space-y-4 p-4">{children}</div>
+    </section>
+  );
+}
+
 export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionFormProps) {
   const [profile, setProfile] = useState<ConnectionProfileInput>(
     initialProfile
@@ -64,11 +86,16 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
   const disabledClass = isRawUri ? "opacity-50 pointer-events-none" : "";
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-5">
+      <FormSection
+        title="Connection details"
+        description="Give this connection a clear name. Use a raw URI only when the individual fields are not sufficient."
+      >
       {/* Name */}
       <div>
-        <label className={labelClass}>Name</label>
+        <label htmlFor="connection-name" className={labelClass}>Name</label>
         <input
+          id="connection-name"
           type="text"
           required
           value={profile.name}
@@ -80,9 +107,11 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
 
       {/* Raw URI */}
       <div>
-        <label className={labelClass}>Raw URI (optional)</label>
+        <label htmlFor="connection-raw-uri" className={labelClass}>Raw URI (optional)</label>
         <input
-          type="text"
+          id="connection-raw-uri"
+          type="password"
+          autoComplete="off"
           value={profile.rawUri ?? ""}
           onChange={(e) => {
             set("rawUri", e.target.value || undefined);
@@ -110,8 +139,13 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
           </p>
         )}
       </div>
+      </FormSection>
 
       {/* SSH tunnel */}
+      <FormSection
+        title="SSH tunnel"
+        description="Optionally reach MongoDB through a bastion host using a private key, SSH agent, or password."
+      >
       <div className="rounded-md border border-border p-4">
         <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
           <input
@@ -182,10 +216,11 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
             )}
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
-                <label className={labelClass}>
+                <label htmlFor="connection-ssh-host" className={labelClass}>
                   {profile.sshTunnel.useSshConfig ? "SSH Config Host Alias" : "SSH Host"}
                 </label>
                 <input
+                  id="connection-ssh-host"
                   required
                   type="text"
                   value={profile.sshTunnel.host}
@@ -201,8 +236,9 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
                 />
               </div>
               <div>
-                <label className={labelClass}>SSH Port</label>
+                <label htmlFor="connection-ssh-port" className={labelClass}>SSH Port</label>
                 <input
+                  id="connection-ssh-port"
                   required={!profile.sshTunnel.useSshConfig}
                   disabled={profile.sshTunnel.useSshConfig}
                   type="number"
@@ -222,8 +258,9 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className={labelClass}>SSH Username</label>
+                <label htmlFor="connection-ssh-username" className={labelClass}>SSH Username</label>
                 <input
+                  id="connection-ssh-username"
                   required={!profile.sshTunnel.useSshConfig}
                   disabled={profile.sshTunnel.useSshConfig}
                   type="text"
@@ -239,8 +276,9 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
                 />
               </div>
               <div>
-                <label className={labelClass}>SSH Authentication</label>
+                <label htmlFor="connection-ssh-auth" className={labelClass}>SSH Authentication</label>
                 <select
+                  id="connection-ssh-auth"
                   value={profile.sshTunnel.authMethod}
                   onChange={(event) => {
                     const authMethod = event.target.value as SshAuthMethod;
@@ -274,8 +312,9 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
 
             {profile.sshTunnel.authMethod === "password" ? (
               <div>
-                <label className={labelClass}>SSH Password</label>
+                <label htmlFor="connection-ssh-password" className={labelClass}>SSH Password</label>
                 <input
+                  id="connection-ssh-password"
                   required={!profile.sshTunnel.hasPassword}
                   type="password"
                   value={profile.sshPassword ?? ""}
@@ -294,8 +333,9 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
             ) : profile.sshTunnel.authMethod === "privateKey" ? (
               <>
                 <div>
-                  <label className={labelClass}>Private Key Path</label>
+                  <label htmlFor="connection-private-key" className={labelClass}>Private Key Path</label>
                   <input
+                    id="connection-private-key"
                     required={!profile.sshTunnel.useSshConfig}
                     type="text"
                     value={profile.sshTunnel.privateKeyPath ?? ""}
@@ -314,8 +354,9 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Private Key Passphrase (optional)</label>
+                  <label htmlFor="connection-private-key-passphrase" className={labelClass}>Private Key Passphrase (optional)</label>
                   <input
+                    id="connection-private-key-passphrase"
                     type="password"
                     value={profile.sshPrivateKeyPassphrase ?? ""}
                     onChange={(event) => {
@@ -358,12 +399,18 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
           </div>
         )}
       </div>
+      </FormSection>
 
+      <FormSection
+        title="MongoDB endpoint"
+        description="Enter the destination as seen from this machine, or from the SSH server when tunneling is enabled."
+      >
       {/* Host + Port */}
       <div className={`grid grid-cols-3 gap-3 ${disabledClass}`}>
         <div className="col-span-2">
-          <label className={labelClass}>Host</label>
+          <label htmlFor="connection-host" className={labelClass}>Host</label>
           <input
+            id="connection-host"
             type="text"
             value={profile.host}
             onChange={(e) => set("host", e.target.value)}
@@ -373,8 +420,9 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
           />
         </div>
         <div>
-          <label className={labelClass}>Port</label>
+          <label htmlFor="connection-port" className={labelClass}>Port</label>
           <input
+            id="connection-port"
             type="number"
             value={profile.port}
             min={1}
@@ -389,8 +437,9 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
       {/* Username + Password */}
       <div className={`grid grid-cols-2 gap-3 ${disabledClass}`}>
         <div>
-          <label className={labelClass}>Username (optional)</label>
+          <label htmlFor="connection-username" className={labelClass}>Username (optional)</label>
           <input
+            id="connection-username"
             type="text"
             value={profile.username ?? ""}
             onChange={(e) => set("username", e.target.value || undefined)}
@@ -400,8 +449,9 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
           />
         </div>
         <div>
-          <label className={labelClass}>Password (optional)</label>
+          <label htmlFor="connection-password" className={labelClass}>Password (optional)</label>
           <input
+            id="connection-password"
             type="password"
             value={profile.password ?? ""}
             onChange={(e) => {
@@ -431,8 +481,9 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
       {/* Auth Source + Database */}
       <div className={`grid grid-cols-2 gap-3 ${disabledClass}`}>
         <div>
-          <label className={labelClass}>Auth Source</label>
+          <label htmlFor="connection-auth-source" className={labelClass}>Auth Source</label>
           <input
+            id="connection-auth-source"
             type="text"
             value={profile.authSource ?? "admin"}
             onChange={(e) => set("authSource", e.target.value || undefined)}
@@ -442,8 +493,9 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
           />
         </div>
         <div>
-          <label className={labelClass}>Database</label>
+          <label htmlFor="connection-database" className={labelClass}>Database</label>
           <input
+            id="connection-database"
             type="text"
             value={profile.database}
             onChange={(e) => set("database", e.target.value)}
@@ -477,13 +529,14 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
           Direct Connection
         </label>
       </div>
+      </FormSection>
 
       {/* Actions */}
-      <div className="flex justify-end gap-2 pt-2">
+      <div className="sticky bottom-0 -mx-6 flex justify-end gap-2 border-t bg-background/95 px-6 py-4 backdrop-blur">
         <Button type="button" variant="outline" onClick={onCancel}>
           Cancel
         </Button>
-        <Button type="submit">Save</Button>
+        <Button type="submit">Save connection</Button>
       </div>
     </form>
   );

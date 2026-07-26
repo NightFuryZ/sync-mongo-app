@@ -146,6 +146,7 @@ export function DiffTable({
               >
                 <input
                   type="checkbox"
+                  aria-label={`Select ${record.keyValue}`}
                   checked={isSelected}
                   disabled={isInFlight || bulkActionInFlight}
                   onChange={() => onToggle(record.id)}
@@ -166,6 +167,7 @@ export function DiffTable({
                   <Button
                     variant="ghost"
                     size="icon-sm"
+                    aria-label={record.kind === "modified" ? `View field diff for ${record.keyValue}` : `View document for ${record.keyValue}`}
                     onClick={() => onExpand(record)}
                     title={record.kind === "modified" ? "View field diff" : "View document"}
                   >

@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { Dialog } from "@base-ui/react/dialog";
 import { useNavigate } from "react-router-dom";
+import { CheckCircle2, CircleAlert, FileCode2, ListChecks, X } from "lucide-react";
 import { useSyncConfigStore } from "@/store/syncConfig";
 import { useDiffResultsStore } from "@/store/diffResults";
 import { api } from "@/lib/tauri";
@@ -7,8 +9,10 @@ import type { DiffRecord, DiffKind, DiffScopeStats } from "@/types";
 import { DiffTable } from "@/components/DiffTable";
 import { TreeDiff } from "@/components/TreeDiff";
 import { Button } from "@/components/ui/button";
+import { PageHeader } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
 import { formatBsonValueRecursive } from "@/lib/bsonDisplay";
+import { getDiffMetrics } from "@/lib/diffMetrics";
 
 type KindFilter = "all" | DiffKind;
 
@@ -377,38 +381,71 @@ export function DiffViewScreen() {
   };
 
   const summary = summaries[activeCollection];
+  const metrics = getDiffMetrics(summary, scopeStats, globalSelectedCount);
+  const canGenerateScript =
+    (scopeStats?.selectedCount ?? 0) > 0 ||
+    (globalSelectedCount ?? 0) > 0;
 
   return (
-    <div className="flex flex-col h-full gap-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Diff Results</h1>
-        <Button
-          onClick={() => navigate("/script")}
-          disabled={
-            // Honest rule: disable only when there's truly no evidence of selection
-            // Check both current scope and global count - enable if EITHER shows selection
-            !((scopeStats && scopeStats.selectedCount > 0) || (globalSelectedCount !== null && globalSelectedCount > 0))
-          }
-        >
-          Generate Script
-        </Button>
-      </div>
+    <div className="flex h-full flex-col gap-5">
+      <PageHeader
+        title="Review changes"
+        description="Inspect detected changes, choose only the records you want to include, then generate a script for review."
+        actions={
+          <Button
+            size="lg"
+            onClick={() => navigate("/script")}
+            disabled={!canGenerateScript}
+          >
+            <FileCode2 />
+            Generate script
+          </Button>
+        }
+      />
 
       {collections.length === 0 ? (
-        <div className="text-muted-foreground text-sm">
-          No collections selected. Go back to Sync Config.
+        <div className="flex min-h-56 flex-col items-center justify-center rounded-xl border border-dashed bg-card px-6 text-center">
+          <ListChecks className="size-6 text-muted-foreground" />
+          <h2 className="mt-3 text-sm font-semibold">No collections ready for review</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Return to Sync Configuration to select and map collections first.
+          </p>
         </div>
       ) : (
         <>
+          <section aria-label="Change summary" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+            <div className="rounded-xl border bg-card px-4 py-3 shadow-xs">
+              <p className="text-xs font-medium text-muted-foreground">Added</p>
+              <p className="mt-1 text-xl font-semibold text-emerald-700 dark:text-emerald-300">{metrics.added} Added</p>
+            </div>
+            <div className="rounded-xl border bg-card px-4 py-3 shadow-xs">
+              <p className="text-xs font-medium text-muted-foreground">Modified</p>
+              <p className="mt-1 text-xl font-semibold text-amber-700 dark:text-amber-300">{metrics.modified} Modified</p>
+            </div>
+            <div className="rounded-xl border bg-card px-4 py-3 shadow-xs">
+              <p className="text-xs font-medium text-muted-foreground">Deleted</p>
+              <p className="mt-1 text-xl font-semibold text-destructive">{metrics.deleted} Deleted</p>
+            </div>
+            <div className="rounded-xl border bg-card px-4 py-3 shadow-xs">
+              <p className="text-xs font-medium text-muted-foreground">Reviewed</p>
+              <p className="mt-1 text-xl font-semibold">{metrics.reviewedCount}{metrics.estimatedCount > metrics.reviewedCount ? ` / ${metrics.estimatedCount}` : ""}</p>
+            </div>
+            <div className="rounded-xl border bg-primary/20 bg-primary/5 px-4 py-3 shadow-xs">
+              <p className="text-xs font-medium text-muted-foreground">Selected for script</p>
+              <p className="mt-1 text-xl font-semibold text-primary">{metrics.selectedCount}</p>
+            </div>
+          </section>
+
           {/* Collection tabs */}
-          <div className="flex gap-1 border-b overflow-x-auto shrink-0">
+          <div role="tablist" aria-label="Collections to review" className="flex shrink-0 gap-1 overflow-x-auto border-b">
             {collections.map((col) => {
               const s = summaries[col.name];
               const counts = s ? `+${s.added} ~${s.modified} -${s.deleted}` : "";
               return (
                 <button
                   key={col.name}
+                  role="tab"
+                  aria-selected={activeCollection === col.name}
                   onClick={() => switchCollection(col.name)}
                   className={cn(
                     "px-3 py-2 text-sm rounded-t border-b-2 whitespace-nowrap transition-colors",
@@ -429,8 +466,10 @@ export function DiffViewScreen() {
           </div>
 
           {/* Kind filters + bulk actions */}
-          <div className="flex items-center justify-between gap-2 shrink-0">
-            <div className="flex gap-1">
+          <section className="flex shrink-0 flex-col gap-3 rounded-xl border bg-card p-4 shadow-xs lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="mb-2 text-xs font-medium text-muted-foreground">Filter change type</p>
+              <div className="flex flex-wrap gap-1" aria-label="Change type filters">
               {KIND_FILTERS.map((f) => {
                 const count =
                   f.value === "all"
@@ -441,6 +480,7 @@ export function DiffViewScreen() {
                 return (
                   <button
                     key={f.value}
+                    aria-pressed={kindFilter === f.value}
                     onClick={() => switchKindFilter(f.value)}
                     className={cn(
                       "px-3 py-1 rounded text-sm transition-colors",
@@ -456,8 +496,9 @@ export function DiffViewScreen() {
                   </button>
                 );
               })}
+              </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -475,19 +516,21 @@ export function DiffViewScreen() {
                 Deselect all {scopeStats ? scopeStats.totalCount : '...'} in filter
               </Button>
             </div>
-          </div>
+          </section>
 
           {/* Bulk action error banner */}
           {bulkActionError && (
-            <div className="shrink-0 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded text-sm text-red-900 dark:text-red-200">
-              ⚠️ {bulkActionError}
+            <div role="alert" className="flex shrink-0 items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+              <CircleAlert className="mt-0.5 size-4 shrink-0" />
+              {bulkActionError}
             </div>
           )}
 
           {/* Warning banner - shown above table so users see it before interacting */}
           {!recordsLoadError && scopeStats?.hasMore && (
-            <div className="shrink-0 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded text-sm text-yellow-900 dark:text-yellow-200">
-              ⚠️ Only the first {scopeStats.loadedCount} records are loaded for review. Bulk select still affects all {scopeStats.totalCount} records in this filter.
+            <div role="status" className="flex shrink-0 items-start gap-2 rounded-lg border border-amber-600/20 bg-amber-50 p-3 text-sm text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+              <CircleAlert className="mt-0.5 size-4 shrink-0" />
+              Only the first {scopeStats.loadedCount} records are loaded for review. Bulk select still affects all {scopeStats.totalCount} records in this filter.
             </div>
           )}
 
@@ -512,47 +555,54 @@ export function DiffViewScreen() {
 
           {/* Footer */}
           {!recordsLoadError && scopeStats && (
-            <div className="text-sm text-muted-foreground shrink-0">
-              {scopeStats.loadedCount} loaded / {scopeStats.selectedCount} selected / {scopeStats.totalCount} total
+            <div className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
+              <CheckCircle2 className="size-4 text-primary" />
+              {scopeStats.loadedCount} loaded · {scopeStats.selectedCount} selected in this filter · {scopeStats.totalCount} total
             </div>
           )}
         </>
       )}
 
-      {/* TreeDiff modal */}
-      {expandedRecord && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-          onClick={() => setExpandedRecord(null)}
-        >
-          <div
-            className="bg-background rounded-lg border shadow-lg w-[600px] max-h-[80vh] overflow-auto p-4 flex flex-col gap-3"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="font-medium text-sm">
-                {expandedRecord.kind === "modified"
-                  ? `Field Diff — `
-                  : expandedRecord.kind === "added"
-                  ? `Document (Added) — `
-                  : `Document (Deleted) — `}
-                <span className="font-mono">{formatKeyValue(expandedRecord.keyValue)}</span>
-              </h2>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setExpandedRecord(null)}
-              >
-                ✕
-              </Button>
-            </div>
-            <TreeDiff
-              sourceDoc={parseDoc(expandedRecord.sourceDoc)}
-              targetDoc={parseDoc(expandedRecord.targetDoc)}
-            />
-          </div>
-        </div>
-      )}
+      <Dialog.Root
+        open={expandedRecord !== null}
+        onOpenChange={(open) => {
+          if (!open) setExpandedRecord(null);
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[1px]" />
+          <Dialog.Viewport className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            {expandedRecord && (
+              <Dialog.Popup className="flex max-h-[80vh] w-full max-w-3xl flex-col gap-3 overflow-auto rounded-xl border bg-background p-5 shadow-2xl">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <Dialog.Title className="text-sm font-semibold">
+                      {expandedRecord.kind === "modified"
+                        ? "Field diff"
+                        : expandedRecord.kind === "added"
+                        ? "Document added"
+                        : "Document deleted"}
+                    </Dialog.Title>
+                    <Dialog.Description className="mt-1 break-all font-mono text-xs text-muted-foreground">
+                      {formatKeyValue(expandedRecord.keyValue)}
+                    </Dialog.Description>
+                  </div>
+                  <Dialog.Close
+                    aria-label="Close document diff"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <X className="size-4" />
+                  </Dialog.Close>
+                </div>
+                <TreeDiff
+                  sourceDoc={parseDoc(expandedRecord.sourceDoc)}
+                  targetDoc={parseDoc(expandedRecord.targetDoc)}
+                />
+              </Dialog.Popup>
+            )}
+          </Dialog.Viewport>
+        </Dialog.Portal>
+      </Dialog.Root>
     </div>
   );
 }

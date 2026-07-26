@@ -1,8 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Loader2 } from "lucide-react";
+import {
+  Check,
+  CircleAlert,
+  Database,
+  Layers3,
+  Loader2,
+  Play,
+  Settings2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
 import { api } from "@/lib/tauri";
+import { getSyncSetupStatus } from "@/lib/syncSetup";
 import { useConnectionsStore } from "@/store/connections";
 import { useSyncConfigStore } from "@/store/syncConfig";
 import { useDiffResultsStore } from "@/store/diffResults";
@@ -143,9 +154,14 @@ export function SyncConfigScreen() {
     void connectionsStore.load();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  function invalidateReview() {
+    clearAll();
+  }
+
   async function handleSourceChange(profileId: string) {
     const profile = connectionsStore.profiles.find((p) => p.id === profileId) ?? null;
     if (!profile) return;
+    invalidateReview();
     setSource(profile);
     setSourceDatabase("");
     setCollections([]);
@@ -165,6 +181,7 @@ export function SyncConfigScreen() {
   async function handleTargetChange(profileId: string) {
     const profile = connectionsStore.profiles.find((p) => p.id === profileId) ?? null;
     if (!profile) return;
+    invalidateReview();
     setTarget(profile);
     setTargetDatabase("");
     setTargetDatabases([]);
@@ -184,6 +201,7 @@ export function SyncConfigScreen() {
   }
 
   async function handleSourceDatabaseChange(db: string) {
+    invalidateReview();
     setSourceDatabase(db);
     setCollections([]);
     setError(null);
@@ -208,6 +226,7 @@ export function SyncConfigScreen() {
   }
 
   async function handleTargetDatabaseChange(db: string) {
+    invalidateReview();
     setTargetDatabase(db);
     setError(null);
     if (!targetProfile || !db) {
@@ -230,7 +249,31 @@ export function SyncConfigScreen() {
   }
 
   function handleSelectAll(selected: boolean) {
+    invalidateReview();
     setCollections(collections.map((c) => ({ ...c, selected })));
+  }
+
+  function handleCollectionToggle(name: string) {
+    invalidateReview();
+    toggleCollection(name);
+  }
+
+  function handleTargetCollectionChange(name: string, targetName: string) {
+    invalidateReview();
+    setTargetCollection(name, targetName);
+  }
+
+  function handleKeyFieldChange(name: string, keyField: string) {
+    invalidateReview();
+    setKeyField(name, keyField);
+  }
+
+  function handleReferenceFieldsChange(
+    collectionName: string,
+    refs: ReferenceFieldConfig[]
+  ) {
+    invalidateReview();
+    setReferenceFields(collectionName, refs);
   }
 
   async function handleStartDiff() {
@@ -259,35 +302,52 @@ export function SyncConfigScreen() {
     }
   }
 
-  const selectedCount = collections.filter((c) => c.selected).length;
-  const canStart =
-    !!sourceProfile &&
-    !!targetProfile &&
-    !!sourceDatabase &&
-    !!targetDatabase &&
-    selectedCount > 0 &&
-    collections
-      .filter((collection) => collection.selected)
-      .every((collection) => collection.targetName.trim() && collection.keyField.trim()) &&
-    !diffLoading;
+  const setupStatus = getSyncSetupStatus({
+    sourceProfile,
+    targetProfile,
+    sourceDatabase,
+    targetDatabase,
+    collections,
+  });
+  const canStart = setupStatus.canStart && !diffLoading;
 
   return (
-    <div className="mx-auto max-w-4xl p-6">
-      <h1 className="mb-6 text-2xl font-semibold">Sync Configuration</h1>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHeader
+        title="Set up your sync"
+        description="Choose where to compare data, map each collection, then review the detected changes before generating a script."
+      />
 
       {error && (
-        <div className="mb-4 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+        <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/50 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+          <CircleAlert className="mt-0.5 size-4 shrink-0" />
           {error}
         </div>
       )}
 
-      <div className="space-y-4">
-        {/* Source / Target profiles — 2-column layout */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">Source Profile</label>
+      <div className="space-y-5">
+        <section className="rounded-xl border bg-card p-5 shadow-xs">
+          <div className="mb-4 flex items-start gap-3">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Database className="size-4" />
+            </span>
+            <div>
+              <h2 className="text-sm font-semibold">1. Choose the data route</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Select the source and target connections. Credentials remain in the system keychain.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+          <div className="rounded-lg border bg-background p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <label htmlFor="source-profile" className="text-sm font-medium">Source connection</label>
+              {sourceProfile && <Badge tone="success"><Check className="mr-1 size-3" />Ready</Badge>}
+            </div>
             <select
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              id="source-profile"
+              aria-label="Source connection"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               value={sourceProfile?.id ?? ""}
               onChange={(e) => handleSourceChange(e.target.value)}
             >
@@ -300,10 +360,15 @@ export function SyncConfigScreen() {
             </select>
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">Target Profile</label>
+          <div className="rounded-lg border bg-background p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <label htmlFor="target-profile" className="text-sm font-medium">Target connection</label>
+              {targetProfile && <Badge tone="success"><Check className="mr-1 size-3" />Ready</Badge>}
+            </div>
             <select
-              className="rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              id="target-profile"
+              aria-label="Target connection"
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               value={targetProfile?.id ?? ""}
               onChange={(e) => handleTargetChange(e.target.value)}
             >
@@ -315,14 +380,14 @@ export function SyncConfigScreen() {
               ))}
             </select>
           </div>
-        </div>
+          </div>
 
-        {/* Source / Target databases — 2-column layout */}
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">Source Database</label>
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <div className="rounded-lg border bg-background p-4">
+            <label htmlFor="source-database" className="mb-3 block text-sm font-medium">Source database</label>
             <div className="flex items-center gap-2">
               <select
+                id="source-database"
                 className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 value={sourceDatabase}
                 disabled={!sourceProfile || loadingSourceDbs}
@@ -339,10 +404,11 @@ export function SyncConfigScreen() {
             </div>
           </div>
 
-          <div className="flex flex-col gap-1">
-            <label className="text-sm font-medium">Target Database</label>
+          <div className="rounded-lg border bg-background p-4">
+            <label htmlFor="target-database" className="mb-3 block text-sm font-medium">Target database</label>
             <div className="flex items-center gap-2">
               <select
+                id="target-database"
                 className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 value={targetDatabase}
                 disabled={!targetProfile || loadingTargetDbs}
@@ -358,18 +424,33 @@ export function SyncConfigScreen() {
               {loadingTargetDbs && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
             </div>
           </div>
-        </div>
+          </div>
+        </section>
 
         {/* Collections mapping table */}
         {sourceDatabase && (
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">
-                Collections Mapping
+          <section className="rounded-xl border bg-card p-5 shadow-xs">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Layers3 className="size-4" />
+                </span>
+                <div>
+                  <h2 className="text-sm font-semibold">
+                    2. Map collections
+                  </h2>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Each selected collection needs a target name and stable key field.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge tone={setupStatus.incompleteMappingCount === 0 ? "success" : "warning"}>
+                  {setupStatus.readyMappingCount} of {setupStatus.selectedCount} mappings ready
+                </Badge>
                 {loadingCols && (
-                  <Loader2 className="ml-2 inline size-3 animate-spin text-muted-foreground" />
+                  <Loader2 className="size-4 animate-spin text-muted-foreground" />
                 )}
-              </label>
               {collections.length > 0 && (
                 <div className="flex gap-2">
                   <button
@@ -390,9 +471,10 @@ export function SyncConfigScreen() {
                 </div>
               )}
             </div>
+            </div>
 
             {collections.length > 0 ? (
-              <div className="overflow-hidden rounded-lg border border-border">
+              <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full text-sm">
                   <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
                     <tr>
@@ -413,8 +495,9 @@ export function SyncConfigScreen() {
                         <td className="px-3 py-2 text-center">
                           <input
                             type="checkbox"
+                            aria-label={`Include ${col.name}`}
                             checked={col.selected}
-                            onChange={() => toggleCollection(col.name)}
+                            onChange={() => handleCollectionToggle(col.name)}
                             className="size-4 cursor-pointer accent-primary"
                           />
                         </td>
@@ -422,10 +505,11 @@ export function SyncConfigScreen() {
                         <td className="px-1 py-2 text-center text-muted-foreground">→</td>
                         <td className="px-3 py-2">
                           <select
+                            aria-label={`Target collection for ${col.name}`}
                             className="w-full rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
                             value={col.targetName}
                             disabled={!targetProfile || !targetDatabase}
-                            onChange={(e) => setTargetCollection(col.name, e.target.value)}
+                            onChange={(e) => handleTargetCollectionChange(col.name, e.target.value)}
                           >
                             <option value="">— none —</option>
                             {targetCollections.map((tc) => (
@@ -438,8 +522,9 @@ export function SyncConfigScreen() {
                         <td className="px-3 py-2">
                           <input
                             type="text"
+                            aria-label={`Key field for ${col.name}`}
                             value={col.keyField}
-                            onChange={(e) => setKeyField(col.name, e.target.value)}
+                            onChange={(e) => handleKeyFieldChange(col.name, e.target.value)}
                             className="w-full rounded border border-border bg-background px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-ring"
                           />
                         </td>
@@ -448,7 +533,7 @@ export function SyncConfigScreen() {
                             key={col.name}
                             collection={col}
                             sourceCollections={collections.map((c) => c.name)}
-                            onSave={(refs) => setReferenceFields(col.name, refs)}
+                            onSave={(refs) => handleReferenceFieldsChange(col.name, refs)}
                           />
                         </td>
                       </tr>
@@ -457,23 +542,36 @@ export function SyncConfigScreen() {
                 </table>
               </div>
             ) : !loadingCols ? (
-              <p className="text-sm text-muted-foreground">No collections found.</p>
+              <p className="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">No collections found in this source database.</p>
             ) : null}
-          </div>
+          </section>
         )}
 
-        {/* Start Diff button */}
-        <div className="flex items-center gap-3 pt-2">
-          <Button disabled={!canStart} onClick={() => void handleStartDiff()}>
+        <section className="rounded-xl border bg-card p-5 shadow-xs">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold">3. Review changes</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Start a read-only comparison before any script can be generated.
+              </p>
+            </div>
+            <Button size="lg" disabled={!canStart} onClick={() => void handleStartDiff()}>
             {diffLoading && <Loader2 className="animate-spin" />}
-            {diffLoading ? "Running Diff…" : "Start Diff"}
+            {!diffLoading && <Play />}
+            {diffLoading ? "Reviewing changes…" : "Review changes"}
           </Button>
-          {selectedCount > 0 && (
-            <span className="text-xs text-muted-foreground">
-              {selectedCount} collection{selectedCount !== 1 ? "s" : ""} selected
-            </span>
+          </div>
+          {!setupStatus.canStart && (
+            <ul className="mt-4 grid gap-1 rounded-lg bg-muted/60 px-3 py-2.5 text-xs text-muted-foreground" aria-label="Setup requirements">
+              {setupStatus.issues.map((issue) => (
+                <li key={issue} className="flex items-center gap-2">
+                  <Settings2 className="size-3.5 shrink-0" />
+                  {issue}
+                </li>
+              ))}
+            </ul>
           )}
-        </div>
+        </section>
       </div>
     </div>
   );

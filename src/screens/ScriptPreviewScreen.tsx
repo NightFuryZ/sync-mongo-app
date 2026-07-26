@@ -1,90 +1,110 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Highlight, themes } from "prism-react-renderer";
 import { save } from "@tauri-apps/plugin-dialog";
 import { writeTextFile } from "@tauri-apps/plugin-fs";
+import { Check, Clipboard, Database, FileCode2, HardDriveDownload, KeyRound, Play, Server } from "lucide-react";
 import { useSyncConfigStore } from "@/store/syncConfig";
 import { api } from "@/lib/tauri";
+import { getSelectedSyncMetrics } from "@/lib/selectedSyncMetrics";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/ui/page-header";
 import { cn } from "@/lib/utils";
 import type { SelectedDiffSummary } from "@/types";
 
 export function ScriptPreviewScreen() {
   const navigate = useNavigate();
-  const { targetProfile, targetDatabase, collections } =
-    useSyncConfigStore();
-
-  const selectedCollections = collections.filter((c) => c.selected);
-
-  const [activeTab, setActiveTab] = useState(
-    selectedCollections[0]?.name ?? ""
+  const targetProfile = useSyncConfigStore((state) => state.targetProfile);
+  const targetDatabase = useSyncConfigStore((state) => state.targetDatabase);
+  const allCollections = useSyncConfigStore((state) => state.collections);
+  const selectedCollections = useMemo(
+    () => allCollections.filter((collection) => collection.selected),
+    [allCollections]
   );
+
+  const [activeTab, setActiveTab] = useState(selectedCollections[0]?.name ?? "");
   const [scripts, setScripts] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState<string | null>(null);
   const [summaries, setSummaries] = useState<Record<string, SelectedDiffSummary>>({});
   const [summaryErrors, setSummaryErrors] = useState<Record<string, string>>({});
   const [summaryLoading, setSummaryLoading] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
-    if (!targetDatabase) return;
+    if (!selectedCollections.some((collection) => collection.name === activeTab)) {
+      setActiveTab(selectedCollections[0]?.name ?? "");
+    }
+  }, [activeTab, selectedCollections]);
 
-    // Load summaries and scripts for each selected collection
-    for (const col of selectedCollections) {
-      setLoading((prev) => ({ ...prev, [col.name]: true }));
-      setSummaryLoading((prev) => ({ ...prev, [col.name]: true }));
-      
-      // Load selected summary
-      api
-        .getSelectedDiffSummary(col.name)
+  useEffect(() => {
+    let isCurrent = true;
+    const selectedNames = selectedCollections.map((collection) => collection.name);
+
+    setScripts({});
+    setErrors({});
+    setSummaries({});
+    setSummaryErrors({});
+    setLoading(Object.fromEntries(selectedNames.map((name) => [name, Boolean(targetDatabase)])));
+    setSummaryLoading(Object.fromEntries(selectedNames.map((name) => [name, Boolean(targetDatabase)])));
+
+    if (!targetDatabase) {
+      return () => {
+        isCurrent = false;
+      };
+    }
+
+    for (const collection of selectedCollections) {
+      void api
+        .getSelectedDiffSummary(collection.name)
         .then((summary) => {
-          setSummaries((prev) => ({ ...prev, [col.name]: summary }));
-          setSummaryErrors((prev) => {
-            const next = { ...prev };
-            delete next[col.name];
-            return next;
-          });
+          if (!isCurrent) return;
+          setSummaries((previous) => ({ ...previous, [collection.name]: summary }));
         })
-        .catch((err: unknown) => {
-          console.error("Failed to load summary for", col.name, err);
-          setSummaryErrors((prev) => ({
-            ...prev,
-            [col.name]: err instanceof Error ? err.message : String(err),
+        .catch((error: unknown) => {
+          if (!isCurrent) return;
+          console.error("Failed to load summary for", collection.name, error);
+          setSummaryErrors((previous) => ({
+            ...previous,
+            [collection.name]: error instanceof Error ? error.message : String(error),
           }));
         })
         .finally(() => {
-          setSummaryLoading((prev) => ({ ...prev, [col.name]: false }));
+          if (!isCurrent) return;
+          setSummaryLoading((previous) => ({ ...previous, [collection.name]: false }));
         });
 
-      // Load script
-      api
+      void api
         .generateSyncScript(
-          col.name,
-          col.targetName,
-          col.keyField,
+          collection.name,
+          collection.targetName,
+          collection.keyField,
           targetDatabase
         )
         .then((script) => {
-          setScripts((prev) => ({ ...prev, [col.name]: script }));
-          setErrors((prev) => {
-            const next = { ...prev };
-            delete next[col.name];
-            return next;
-          });
+          if (!isCurrent) return;
+          setScripts((previous) => ({ ...previous, [collection.name]: script }));
         })
-        .catch((err: unknown) => {
-          setErrors((prev) => ({
-            ...prev,
-            [col.name]: err instanceof Error ? err.message : String(err),
+        .catch((error: unknown) => {
+          if (!isCurrent) return;
+          setErrors((previous) => ({
+            ...previous,
+            [collection.name]: error instanceof Error ? error.message : String(error),
           }));
         })
         .finally(() => {
-          setLoading((prev) => ({ ...prev, [col.name]: false }));
+          if (!isCurrent) return;
+          setLoading((previous) => ({ ...previous, [collection.name]: false }));
         });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [selectedCollections, targetDatabase]);
 
   const currentScript = scripts[activeTab] ?? "";
   const currentError = errors[activeTab];
@@ -92,12 +112,20 @@ export function ScriptPreviewScreen() {
   const currentSummary = summaries[activeTab];
   const currentSummaryError = summaryErrors[activeTab];
   const isSummaryLoading = summaryLoading[activeTab];
+  const metrics = getSelectedSyncMetrics(selectedCollections, summaries);
+  const summaryErrorCount = Object.keys(summaryErrors).length;
 
   async function handleCopy() {
     if (!currentScript) return;
-    await navigator.clipboard.writeText(currentScript);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(currentScript);
+      setCopyError(null);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error("Failed to copy script", error);
+      setCopyError("Could not copy the script. Select it in the editor and copy it manually.");
+    }
   }
 
   async function handleSave() {
@@ -113,167 +141,181 @@ export function ScriptPreviewScreen() {
 
   if (selectedCollections.length === 0) {
     return (
-      <div className="flex flex-col gap-4 p-6">
-        <p className="text-sm text-muted-foreground">
-          No collections selected. Go back and select collections to sync.
-        </p>
-        <Button variant="outline" onClick={() => navigate("/diff")}>
-          ← Back to Diff
-        </Button>
+      <div className="flex h-full flex-col gap-5">
+        <PageHeader
+          title="Preview sync script"
+          description="A generated script will appear here after you select changes to include."
+        />
+        <EmptyState
+          icon={FileCode2}
+          title="No changes selected for a script"
+          description="Return to Review Changes and select the records you want to sync before generating a script."
+          action={
+            <Button onClick={() => navigate("/diff")}>
+              Review changes
+            </Button>
+          }
+        />
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col h-full gap-4 p-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Script Preview</h1>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleCopy}
-            disabled={!currentScript}
-          >
-            {copied ? "Copied!" : "Copy"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleSave}
-            disabled={!currentScript}
-          >
-            Save to File
-          </Button>
-          <Button size="sm" onClick={() => navigate("/execution-log")}>
-            Execute Sync →
-          </Button>
+    <div className="flex h-full flex-col gap-5">
+      <PageHeader
+        title="Preview sync script"
+        description="Review the exact operations selected for sync, save a portable script, or continue to the protected in-app run."
+        actions={
+          <div className="flex flex-wrap justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => void handleCopy()} disabled={!currentScript}>
+              {copied ? <Check /> : <Clipboard />}
+              {copied ? "Copied" : "Copy script"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => void handleSave()} disabled={!currentScript}>
+              <HardDriveDownload />
+              Save file
+            </Button>
+            <Button size="sm" onClick={() => navigate("/execution-log")}>
+              <Play />
+              Review and run sync
+            </Button>
+          </div>
+        }
+      />
+
+      <section aria-label="Selected operation summary" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
+        <SummaryMetric label="Added" value={metrics.added} tone="text-emerald-700 dark:text-emerald-300" />
+        <SummaryMetric label="Modified" value={metrics.modified} tone="text-amber-700 dark:text-amber-300" />
+        <SummaryMetric label="Deleted" value={metrics.deleted} tone="text-destructive" />
+        <SummaryMetric label="Collections" value={metrics.collectionCount} />
+        <SummaryMetric label="Selected operations" value={metrics.totalSelected} tone="text-primary" emphasis />
+      </section>
+
+      {summaryErrorCount > 0 && (
+        <div role="alert" className="rounded-lg border border-amber-600/25 bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-100">
+          {summaryErrorCount} collection summary could not be loaded. The totals above include only summaries that were available.
         </div>
-      </div>
+      )}
+
+      <section className="grid gap-3 rounded-xl border bg-card p-4 shadow-xs lg:grid-cols-[1fr_auto] lg:items-center">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Database className="size-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-muted-foreground">In-app sync target</p>
+            <p className="mt-0.5 truncate text-sm font-semibold">{targetProfile?.name ?? "Choose a target connection"}</p>
+            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Server className="size-3" />
+              {targetDatabase || "No target database selected"}
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-1.5 lg:justify-end">
+          <Badge tone={targetProfile ? "success" : "warning"}>
+            {targetProfile ? "Target configured" : "Target required"}
+          </Badge>
+          {targetProfile?.sshTunnel && <Badge tone="primary">SSH tunnel managed</Badge>}
+        </div>
+      </section>
 
       {selectedCollections.length > 1 && (
-        <div className="flex gap-1 border-b">
-          {selectedCollections.map((col) => (
+        <div role="tablist" aria-label="Generated scripts" className="flex shrink-0 gap-1 overflow-x-auto border-b">
+          {selectedCollections.map((collection) => (
             <button
-              key={col.name}
-              onClick={() => setActiveTab(col.name)}
+              key={collection.name}
+              role="tab"
+              aria-selected={activeTab === collection.name}
+              onClick={() => setActiveTab(collection.name)}
               className={cn(
-                "px-4 py-2 text-sm font-medium transition-colors",
-                activeTab === col.name
-                  ? "border-b-2 border-primary text-primary"
-                  : "text-muted-foreground hover:text-foreground"
+                "rounded-t px-3 py-2 text-sm transition-colors",
+                activeTab === collection.name
+                  ? "border-b-2 border-primary font-medium text-foreground"
+                  : "border-b-2 border-transparent text-muted-foreground hover:text-foreground"
               )}
             >
-              {col.name}
+              {collection.name}
             </button>
           ))}
         </div>
       )}
 
-      {isSummaryLoading && (
-        <div className="rounded-md border p-3 bg-muted/50 text-sm text-muted-foreground">
-          Loading summary for <strong className="ml-1">{activeTab}</strong>…
-        </div>
-      )}
-
-      {!isSummaryLoading && currentSummary && !currentSummaryError && (
-        <div className="rounded-md border p-3 bg-muted/50">
-          <div className="text-xs font-medium text-muted-foreground mb-2">
-            Pre-Execution Summary for {activeTab}
-          </div>
-          <div className="flex gap-4 text-sm">
-            <span className="text-green-700 dark:text-green-400">
-              +{currentSummary.added} added
-            </span>
-            <span className="text-blue-700 dark:text-blue-400">
-              ~{currentSummary.modified} modified
-            </span>
-            <span className="text-red-600 dark:text-red-400">
-              −{currentSummary.deleted} deleted
-            </span>
-            <span className="text-muted-foreground">
-              • {currentSummary.totalSelected} total selected
-            </span>
+      <section className="rounded-xl border border-amber-600/25 bg-amber-50/70 p-4 text-sm text-amber-950 dark:bg-amber-950/25 dark:text-amber-100">
+        <div className="flex items-start gap-2">
+          <KeyRound className="mt-0.5 size-4 shrink-0" />
+          <div>
+            <p className="font-medium">Saved scripts need their own connection environment</p>
+            <p className="mt-1 text-xs leading-relaxed">
+              The generated file deliberately never contains your URI or credentials. Set the target URI before running it with mongosh.
+            </p>
+            <code className="mt-2 block overflow-x-auto rounded-md bg-black/10 px-2 py-1.5 text-xs dark:bg-white/10">
+              export SYNC_MONGO_TARGET_URI='mongodb://user:password@host:27017'
+            </code>
+            <p className="mt-1.5 text-xs">Then run <code>mongosh sync-{activeTab}.js</code>.</p>
+            {targetProfile?.sshTunnel && (
+              <p className="mt-2 border-t border-amber-600/20 pt-2 text-xs leading-relaxed">
+                In-app sync opens this profile&apos;s SSH tunnel automatically. A saved mongosh script does not, so start a local SSH forward first and use that local endpoint in <code>SYNC_MONGO_TARGET_URI</code>.
+              </p>
+            )}
           </div>
         </div>
-      )}
-
-      {currentSummaryError && (
-        <div className="rounded-md border p-3 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 text-sm">
-          ✗ Failed to load summary: {currentSummaryError}
-        </div>
-      )}
-
-      <section className="rounded-md border border-amber-500/40 bg-amber-50 p-3 text-sm text-amber-950 dark:bg-amber-950/20 dark:text-amber-100">
-        <p className="font-medium">Before running this script</p>
-        <p className="mt-1 text-xs">
-          Set the target connection URI in your terminal. The URI is deliberately not embedded in the generated file.
-        </p>
-        <code className="mt-2 block overflow-x-auto rounded bg-black/10 px-2 py-1.5 text-xs dark:bg-white/10">
-          export SYNC_MONGO_TARGET_URI='mongodb://user:password@host:27017'
-        </code>
-        <p className="mt-1 text-xs">Then run: <code>mongosh sync-{activeTab}.js</code></p>
-        {targetProfile?.sshTunnel && (
-          <p className="mt-2 border-t border-amber-500/30 pt-2 text-xs">
-            This profile uses SSH. “Execute Sync” opens the tunnel automatically, but a saved
-            mongosh script does not. Open an SSH local-forward separately and set
-            <code className="mx-1">SYNC_MONGO_TARGET_URI</code>
-            to that local endpoint before running the file.
-          </p>
-        )}
       </section>
 
-      <div className="flex-1 overflow-auto rounded-md border">
-        {isLoading && (
-          <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-            Generating script for <strong className="ml-1">{activeTab}</strong>…
+      {copyError && <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">{copyError}</div>}
+
+      <section aria-label="Script editor" className="flex min-h-72 flex-1 flex-col overflow-hidden rounded-xl border bg-card shadow-xs">
+        <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
+          <div>
+            <p className="text-sm font-semibold">{activeTab}.js</p>
+            <p className="text-xs text-muted-foreground">Generated for {activeTab} → {selectedCollections.find((collection) => collection.name === activeTab)?.targetName}</p>
+          </div>
+          <Badge tone={currentError ? "warning" : currentScript ? "success" : "neutral"}>
+            {currentError ? "Generation failed" : currentScript ? "Ready to review" : "Generating"}
+          </Badge>
+        </div>
+        {isSummaryLoading && <div role="status" className="border-b bg-muted/50 px-4 py-2 text-xs text-muted-foreground">Loading selected-operation summary for {activeTab}…</div>}
+        {!isSummaryLoading && currentSummary && !currentSummaryError && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 border-b bg-muted/30 px-4 py-2 text-xs">
+            <span className="text-emerald-700 dark:text-emerald-300">+{currentSummary.added} added</span>
+            <span className="text-amber-700 dark:text-amber-300">~{currentSummary.modified} modified</span>
+            <span className="text-destructive">−{currentSummary.deleted} deleted</span>
+            <span className="text-muted-foreground">{currentSummary.totalSelected} selected</span>
           </div>
         )}
-        {!isLoading && currentError && (
-          <div className="p-4 text-sm text-destructive bg-destructive/10 rounded-md">
-            Error: {currentError}
-          </div>
-        )}
-        {!isLoading && !currentError && currentScript && (
-          <Highlight
-            theme={themes.vsDark}
-            code={currentScript}
-            language="javascript"
-          >
-            {({ className, style, tokens, getLineProps, getTokenProps }) => (
-              <pre
-                className={cn(
-                  className,
-                  "h-full overflow-x-hidden overflow-y-auto p-4 text-sm whitespace-pre-wrap break-words"
-                )}
-                style={style}
-              >
-                {tokens.map((line, i) => (
-                  <div key={i} {...getLineProps({ line })}>
-                    <span className="select-none pr-4 text-xs opacity-40 inline-block w-10 text-right">
-                      {i + 1}
-                    </span>
-                    {line.map((token, j) => (
-                      <span key={j} {...getTokenProps({ token })} />
-                    ))}
-                  </div>
-                ))}
-              </pre>
-            )}
-          </Highlight>
-        )}
-        {!isLoading && !currentError && !currentScript && (
-          <div className="flex items-center justify-center h-32 text-sm text-muted-foreground">
-            No script generated yet.
-          </div>
-        )}
-      </div>
+        {currentSummaryError && <div role="alert" className="border-b bg-destructive/10 px-4 py-2 text-xs text-destructive">Could not load the selected-operation summary: {currentSummaryError}</div>}
+        <div className="min-h-0 flex-1 overflow-auto">
+          {isLoading && <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">Generating script for {activeTab}…</div>}
+          {!isLoading && currentError && <div role="alert" className="m-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">Could not generate script: {currentError}</div>}
+          {!isLoading && !currentError && currentScript && (
+            <Highlight theme={themes.vsDark} code={currentScript} language="javascript">
+              {({ className, style, tokens, getLineProps, getTokenProps }) => (
+                <pre className={cn(className, "min-h-full overflow-x-auto p-4 text-sm whitespace-pre-wrap break-words")} style={style}>
+                  {tokens.map((line, index) => (
+                    <div key={index} {...getLineProps({ line })}>
+                      <span className="inline-block w-10 select-none pr-4 text-right text-xs opacity-40">{index + 1}</span>
+                      {line.map((token, tokenIndex) => <span key={tokenIndex} {...getTokenProps({ token })} />)}
+                    </div>
+                  ))}
+                </pre>
+              )}
+            </Highlight>
+          )}
+          {!isLoading && !currentError && !currentScript && <div className="flex h-40 items-center justify-center text-sm text-muted-foreground">No script generated yet.</div>}
+        </div>
+      </section>
 
       <div className="flex justify-start">
-        <Button variant="link" size="sm" onClick={() => navigate("/diff")}>
-          ← Back to Diff
-        </Button>
+        <Button variant="link" size="sm" onClick={() => navigate("/diff")}>← Back to review changes</Button>
       </div>
+    </div>
+  );
+}
+
+function SummaryMetric({ label, value, tone, emphasis = false }: { label: string; value: number; tone?: string; emphasis?: boolean }) {
+  return (
+    <div className={cn("rounded-xl border bg-card px-4 py-3 shadow-xs", emphasis && "border-primary/20 bg-primary/5")}>
+      <p className="text-xs font-medium text-muted-foreground">{label}</p>
+      <p className={cn("mt-1 text-xl font-semibold", tone)}>{value} {label === "Selected operations" ? "Selected operations" : ""}</p>
     </div>
   );
 }

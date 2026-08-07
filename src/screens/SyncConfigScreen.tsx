@@ -25,23 +25,44 @@ interface RefFieldEditorProps {
   onSave: (refs: ReferenceFieldConfig[]) => void;
 }
 
+type EditableReferenceField = Omit<ReferenceFieldConfig, "displayFields"> & {
+  displayFieldsText: string;
+  _key: number;
+};
+
 function RefFieldEditor({ collection, sourceCollections, onSave }: RefFieldEditorProps) {
-  const [refs, setRefs] = useState<(ReferenceFieldConfig & { _key: number })[]>(
-    () => collection.referenceFields.map((r, i) => ({ ...r, _key: i }))
+  const [refs, setRefs] = useState<EditableReferenceField[]>(
+    () => collection.referenceFields.map((r, i) => ({
+      localField: r.localField,
+      refCollection: r.refCollection,
+      displayFieldsText: r.displayFields.join(", "),
+      _key: i,
+    }))
   );
   const nextKey = useRef(collection.referenceFields.length);
   const [open, setOpen] = useState(false);
 
   const addRef = () => {
-    const newRef = { localField: "", refCollection: "", displayFields: [] as string[], _key: nextKey.current++ };
+    const newRef: EditableReferenceField = {
+      localField: "",
+      refCollection: "",
+      displayFieldsText: "",
+      _key: nextKey.current++,
+    };
     setRefs(prev => [...prev, newRef]);
   };
   const removeRef = (i: number) => setRefs(prev => prev.filter((_, idx) => idx !== i));
-  const updateRef = (i: number, patch: Partial<ReferenceFieldConfig>) =>
+  const updateRef = (i: number, patch: Partial<EditableReferenceField>) =>
     setRefs(prev => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
   const handleSave = () => {
-    onSave(refs.map(({ _key: _, ...r }) => r));
+    onSave(refs.map(({ _key: _, displayFieldsText, ...r }) => ({
+      ...r,
+      displayFields: displayFieldsText
+        .split(",")
+        .map((field) => field.trim())
+        .filter(Boolean),
+    })));
     setOpen(false);
   };
 
@@ -77,15 +98,8 @@ function RefFieldEditor({ collection, sourceCollections, onSave }: RefFieldEdito
               </select>
               <input
                 placeholder="display fields (comma)"
-                value={r.displayFields.join(",")}
-                onChange={(e) =>
-                  updateRef(i, {
-                    displayFields: e.target.value
-                      .split(",")
-                      .map((s) => s.trim())
-                      .filter(Boolean),
-                  })
-                }
+                value={r.displayFieldsText}
+                onChange={(e) => updateRef(i, { displayFieldsText: e.target.value })}
                 className="w-36 rounded border border-border px-1 py-0.5"
               />
               <button

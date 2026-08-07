@@ -137,4 +137,51 @@ describe("ConnectionForm", () => {
     });
     expect(onSave).toHaveBeenCalledTimes(1);
   });
+
+  it("allows auth source to be cleared", async () => {
+    apiMocks.testConnectionInput.mockResolvedValue({
+      success: true,
+      serverVersion: "8.0.0",
+    });
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+
+    render(<ConnectionForm onSave={onSave} onCancel={vi.fn()} />);
+
+    const authSource = screen.getByLabelText(/auth source/i);
+    expect(authSource).toHaveValue("admin");
+
+    await user.clear(authSource);
+
+    expect(authSource).toHaveValue("");
+    await user.type(screen.getByLabelText(/^name$/i), "Local MongoDB");
+    await user.click(
+      screen.getByRole("button", { name: /check connection & save/i }),
+    );
+
+    await waitFor(() => {
+      expect(apiMocks.testConnectionInput).toHaveBeenCalledWith(
+        expect.objectContaining({ authSource: undefined }),
+      );
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({ authSource: undefined }),
+      );
+    });
+  });
+
+  it("disables automatic capitalization and correction for text fields", () => {
+    const { container } = render(
+      <ConnectionForm onSave={vi.fn()} onCancel={vi.fn()} />,
+    );
+    const textInputs = container.querySelectorAll<HTMLInputElement>(
+      'input[type="text"]',
+    );
+
+    expect(textInputs.length).toBeGreaterThan(0);
+    for (const input of textInputs) {
+      expect(input).toHaveAttribute("autocapitalize", "none");
+      expect(input).toHaveAttribute("autocorrect", "off");
+      expect(input).toHaveAttribute("spellcheck", "false");
+    }
+  });
 });

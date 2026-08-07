@@ -43,6 +43,12 @@ const inputClass =
 
 const labelClass = "block text-sm font-medium mb-1";
 
+const textInputBehaviorProps = {
+  autoCapitalize: "none" as const,
+  autoCorrect: "off" as const,
+  spellCheck: false,
+};
+
 function FormSection({
   title,
   description,
@@ -160,6 +166,7 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
         <input
           id="connection-name"
           type="text"
+          {...textInputBehaviorProps}
           required
           value={profile.name}
           onChange={(e) => set("name", e.target.value)}
@@ -286,6 +293,7 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
                   id="connection-ssh-host"
                   required
                   type="text"
+                  {...textInputBehaviorProps}
                   value={profile.sshTunnel.host}
                   onChange={(event) =>
                     set("sshTunnel", { ...profile.sshTunnel!, host: event.target.value })
@@ -327,6 +335,7 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
                   required={!profile.sshTunnel.useSshConfig}
                   disabled={profile.sshTunnel.useSshConfig}
                   type="text"
+                  {...textInputBehaviorProps}
                   value={profile.sshTunnel.username}
                   onChange={(event) =>
                     set("sshTunnel", {
@@ -401,6 +410,7 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
                     id="connection-private-key"
                     required={!profile.sshTunnel.useSshConfig}
                     type="text"
+                    {...textInputBehaviorProps}
                     value={profile.sshTunnel.privateKeyPath ?? ""}
                     onChange={(event) =>
                       set("sshTunnel", {
@@ -475,6 +485,7 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
           <input
             id="connection-host"
             type="text"
+            {...textInputBehaviorProps}
             value={profile.host}
             onChange={(e) => set("host", e.target.value)}
             disabled={isRawUri}
@@ -504,6 +515,7 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
           <input
             id="connection-username"
             type="text"
+            {...textInputBehaviorProps}
             value={profile.username ?? ""}
             onChange={(e) => set("username", e.target.value || undefined)}
             disabled={isRawUri}
@@ -548,7 +560,8 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
           <input
             id="connection-auth-source"
             type="text"
-            value={profile.authSource ?? "admin"}
+            {...textInputBehaviorProps}
+            value={profile.authSource ?? ""}
             onChange={(e) => set("authSource", e.target.value || undefined)}
             disabled={isRawUri}
             className={inputClass}
@@ -560,6 +573,7 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
           <input
             id="connection-database"
             type="text"
+            {...textInputBehaviorProps}
             value={profile.database}
             onChange={(e) => set("database", e.target.value)}
             disabled={isRawUri}

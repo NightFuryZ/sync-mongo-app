@@ -1,16 +1,24 @@
 import { useState } from "react";
+import { CircleAlert, Loader2 } from "lucide-react";
 import type {
   ConnectionProfile,
   ConnectionProfileInput,
   SshAuthMethod,
 } from "@/types";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/tauri";
 
 interface ConnectionFormProps {
   initialProfile?: ConnectionProfile;
-  onSave: (profile: ConnectionProfileInput) => void;
+  onSave: (profile: ConnectionProfileInput) => Promise<void> | void;
   onCancel: () => void;
 }
+
+type VerificationState =
+  | { state: "idle" }
+  | { state: "testing" }
+  | { state: "saving" }
+  | { state: "failed"; title: string; error: string };
 
 const DEFAULT_PROFILE: ConnectionProfileInput = {
   id: "",
@@ -69,24 +77,79 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
         }
       : { ...DEFAULT_PROFILE },
   );
+  const [verification, setVerification] = useState<VerificationState>({
+    state: "idle",
+  });
 
   const isRawUri = !!profile.rawUri || (profile.hasRawUri && !profile.replaceRawUri);
   const isSshTunnel = profile.sshTunnel !== undefined;
+  const isTesting = verification.state === "testing";
+  const isSaving = verification.state === "saving";
+  const isBusy = isTesting || isSaving;
+  const submitLabel = isTesting
+    ? isSshTunnel
+      ? "Checking SSH & MongoDB…"
+      : "Checking MongoDB…"
+    : isSaving
+      ? "Saving connection…"
+      : "Check connection & save";
 
   function set<K extends keyof ConnectionProfileInput>(key: K, value: ConnectionProfileInput[K]) {
     setProfile((prev) => ({ ...prev, [key]: value }));
+    setVerification({ state: "idle" });
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (isTesting) return;
     const id = profile.id || crypto.randomUUID();
-    onSave({ ...profile, id });
+    const candidate = { ...profile, id };
+    setVerification({ state: "testing" });
+    let result;
+    try {
+      result = await api.testConnectionInput(candidate);
+    } catch {
+      setVerification({
+        state: "failed",
+        title: "Connection check failed",
+        error:
+          "Could not verify this connection. Check the connection settings and try again.",
+      });
+      return;
+    }
+    if (!result.success) {
+      setVerification({
+        state: "failed",
+        title: "Connection check failed",
+        error: result.error ?? "Connection verification failed.",
+      });
+      return;
+    }
+    setVerification({ state: "saving" });
+    try {
+      await onSave(candidate);
+    } catch {
+      setVerification({
+        state: "failed",
+        title: "Connection verified, but the profile could not be saved",
+        error:
+          "Check that the operating system credential store is available, then try again.",
+      });
+    }
   }
 
   const disabledClass = isRawUri ? "opacity-50 pointer-events-none" : "";
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form
+      onSubmit={(event) => void handleSubmit(event)}
+      className="space-y-5"
+      aria-busy={isBusy}
+    >
+      <fieldset
+        disabled={isBusy}
+        className="min-w-0 space-y-5 border-0 p-0"
+      >
       <FormSection
         title="Connection details"
         description="Give this connection a clear name. Use a raw URI only when the individual fields are not sufficient."
@@ -506,6 +569,33 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
         </div>
       </div>
 
+      <div className={disabledClass}>
+        <label
+          htmlFor="connection-auth-mechanism"
+          className={labelClass}
+        >
+          Authentication Mechanism
+        </label>
+        <select
+          id="connection-auth-mechanism"
+          value={profile.authMechanism ?? ""}
+          onChange={(event) =>
+            set("authMechanism", event.target.value || undefined)
+          }
+          disabled={isRawUri}
+          className={inputClass}
+        >
+          <option value="">Automatic (recommended)</option>
+          <option value="SCRAM-SHA-1">SCRAM-SHA-1</option>
+          <option value="SCRAM-SHA-256">SCRAM-SHA-256</option>
+          <option value="MONGODB-X509">MONGODB-X509</option>
+        </select>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Keep Automatic unless the MongoDB URI or server configuration
+          explicitly requires a mechanism.
+        </p>
+      </div>
+
       {/* Checkboxes */}
       <div className={`flex gap-6 ${disabledClass}`}>
         <label className="flex cursor-pointer items-center gap-2 text-sm">
@@ -531,13 +621,35 @@ export function ConnectionForm({ initialProfile, onSave, onCancel }: ConnectionF
       </div>
       </FormSection>
 
+      {verification.state === "failed" && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+        >
+          <CircleAlert className="mt-0.5 size-4 shrink-0" />
+          <div>
+            <p className="font-medium">{verification.title}</p>
+            <p className="mt-0.5 break-words">{verification.error}</p>
+          </div>
+        </div>
+      )}
+
       {/* Actions */}
       <div className="sticky bottom-0 -mx-6 flex justify-end gap-2 border-t bg-background/95 px-6 py-4 backdrop-blur">
-        <Button type="button" variant="outline" onClick={onCancel}>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onCancel}
+          disabled={isBusy}
+        >
           Cancel
         </Button>
-        <Button type="submit">Save connection</Button>
+        <Button type="submit" disabled={isBusy}>
+          {isBusy && <Loader2 className="animate-spin" />}
+          {submitLabel}
+        </Button>
       </div>
+      </fieldset>
     </form>
   );
 }

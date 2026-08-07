@@ -1,8 +1,35 @@
 use crate::models::{ConnectionProfile, ConnectionTestResult};
-use crate::mongo::ssh_tunnel::SshTunnel;
+use crate::mongo::ssh_tunnel::{self, SshTunnel};
 use anyhow::{bail, Result};
 use mongodb::{options::ClientOptions, Client};
+use std::net::Ipv6Addr;
 use urlencoding::encode;
+
+const SUPPORTED_AUTH_MECHANISMS: [&str; 3] = ["SCRAM-SHA-1", "SCRAM-SHA-256", "MONGODB-X509"];
+
+pub fn validate_profile(profile: &ConnectionProfile) -> Result<()> {
+    ssh_tunnel::validate_profile(profile)?;
+    if profile.raw_uri.is_none() {
+        validate_host(&profile.host)?;
+    }
+    if let Some(mechanism) = profile.auth_mechanism.as_deref() {
+        if !SUPPORTED_AUTH_MECHANISMS.contains(&mechanism) {
+            bail!("Unsupported MongoDB authentication mechanism");
+        }
+    }
+    Ok(())
+}
+
+fn validate_host(host: &str) -> Result<()> {
+    let is_hostname = !host.is_empty()
+        && host
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'));
+    if !is_hostname && host.parse::<Ipv6Addr>().is_err() {
+        bail!("Invalid MongoDB host");
+    }
+    Ok(())
+}
 
 pub fn build_uri(profile: &ConnectionProfile) -> String {
     if let Some(uri) = &profile.raw_uri {
@@ -13,30 +40,38 @@ pub fn build_uri(profile: &ConnectionProfile) -> String {
         (Some(u), None) => format!("{}@", encode(u)),
         _ => String::new(),
     };
+    let host = if profile.host.parse::<Ipv6Addr>().is_ok() {
+        format!("[{}]", profile.host)
+    } else {
+        profile.host.clone()
+    };
     let mut uri = format!(
         "mongodb://{}{}:{}/{}",
-        auth, profile.host, profile.port, profile.database
+        auth,
+        host,
+        profile.port,
+        encode(&profile.database)
     );
     let mut params: Vec<String> = vec![];
     if profile.direct_connection {
         params.push("directConnection=true".into());
     }
     if let Some(rs) = &profile.replica_set {
-        params.push(format!("replicaSet={}", rs));
+        params.push(format!("replicaSet={}", encode(rs)));
     }
     if let Some(auth_src) = &profile.auth_source {
-        params.push(format!("authSource={}", auth_src));
+        params.push(format!("authSource={}", encode(auth_src)));
     }
     if let Some(mech) = &profile.auth_mechanism {
-        params.push(format!("authMechanism={}", mech));
+        params.push(format!("authMechanism={}", encode(mech)));
     }
     if profile.tls {
         params.push("tls=true".into());
         if let Some(ca) = &profile.tls_ca_cert {
-            params.push(format!("tlsCAFile={}", ca));
+            params.push(format!("tlsCAFile={}", encode(ca)));
         }
         if let Some(cert) = &profile.tls_client_cert {
-            params.push(format!("tlsCertificateKeyFile={}", cert));
+            params.push(format!("tlsCertificateKeyFile={}", encode(cert)));
         }
     }
     if let Some(t) = profile.connect_timeout_ms {
@@ -71,6 +106,7 @@ pub struct ProfileConnection {
 }
 
 pub async fn connect_profile(profile: &ConnectionProfile) -> Result<ProfileConnection> {
+    validate_profile(profile)?;
     let (uri, tunnel) = if let Some(ssh_config) = &profile.ssh_tunnel {
         if profile.raw_uri.is_some() {
             bail!("SSH tunnel cannot be combined with a raw MongoDB URI");
@@ -188,6 +224,69 @@ mod tests {
         let uri = build_uri(&p);
         assert!(uri.contains("admin:secret@"), "uri: {}", uri);
         assert!(uri.contains("directConnection=true"), "uri: {}", uri);
+    }
+
+    #[test]
+    fn build_uri_includes_selected_authentication_mechanism() {
+        let mut profile = make_profile(None);
+        profile.auth_mechanism = Some("SCRAM-SHA-1".into());
+
+        let uri = build_uri(&profile);
+
+        assert!(uri.contains("authMechanism=SCRAM-SHA-1"), "uri: {}", uri);
+    }
+
+    #[test]
+    fn profile_validation_rejects_unsupported_authentication_mechanisms() {
+        let mut profile = make_profile(None);
+        profile.auth_mechanism = Some("SCRAM-SHA-1&tls=false".into());
+
+        let error = validate_profile(&profile).unwrap_err();
+
+        assert!(error.to_string().contains("authentication mechanism"));
+    }
+
+    #[test]
+    fn profile_validation_accepts_supported_authentication_mechanisms() {
+        let mut profile = make_profile(None);
+        profile.auth_mechanism = Some("SCRAM-SHA-256".into());
+
+        assert!(validate_profile(&profile).is_ok());
+    }
+
+    #[test]
+    fn profile_validation_rejects_uri_delimiters_in_host() {
+        let mut profile = make_profile(None);
+        profile.host = "db.example.com@attacker.example.com".into();
+
+        let error = validate_profile(&profile).unwrap_err();
+
+        assert!(error.to_string().contains("host"));
+    }
+
+    #[test]
+    fn build_uri_encodes_database_and_query_values() {
+        let mut profile = make_profile(None);
+        profile.database = "app?tls=false".into();
+        profile.auth_source = Some("admin&tls=false".into());
+
+        let uri = build_uri(&profile);
+
+        assert!(uri.contains("/app%3Ftls%3Dfalse?"), "uri: {uri}");
+        assert!(uri.contains("authSource=admin%26tls%3Dfalse"), "uri: {uri}");
+    }
+
+    #[tokio::test]
+    async fn connect_profile_rejects_invalid_profiles_before_building_a_client() {
+        let mut profile = make_profile(None);
+        profile.auth_mechanism = Some("SCRAM-SHA-1&tls=false".into());
+
+        let error = match connect_profile(&profile).await {
+            Ok(_) => panic!("invalid profile unexpectedly created a client"),
+            Err(error) => error,
+        };
+
+        assert!(error.to_string().contains("authentication mechanism"));
     }
 
     #[test]

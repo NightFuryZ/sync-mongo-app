@@ -563,16 +563,16 @@ export function DiffViewScreen() {
         </>
       )}
 
-      <Dialog.Root
-        open={expandedRecord !== null}
-        onOpenChange={(open) => {
-          if (!open) setExpandedRecord(null);
-        }}
-      >
-        <Dialog.Portal>
-          <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[1px]" />
-          <Dialog.Viewport className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            {expandedRecord && (
+      {expandedRecord && (
+        <Dialog.Root
+          open
+          onOpenChange={(open) => {
+            if (!open) setExpandedRecord(null);
+          }}
+        >
+          <Dialog.Portal>
+            <Dialog.Backdrop className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[1px]" />
+            <Dialog.Viewport className="fixed inset-0 z-50 flex items-center justify-center p-4">
               <Dialog.Popup className="flex max-h-[80vh] w-full max-w-3xl flex-col gap-3 overflow-auto rounded-xl border bg-background p-5 shadow-2xl">
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -595,14 +595,14 @@ export function DiffViewScreen() {
                   </Dialog.Close>
                 </div>
                 <TreeDiff
-                  sourceDoc={parseDoc(expandedRecord.sourceDoc)}
-                  targetDoc={parseDoc(expandedRecord.targetDoc)}
+                  currentDoc={parseDoc(expandedRecord.targetDoc)}
+                  desiredDoc={parseDoc(expandedRecord.sourceDoc)}
                 />
               </Dialog.Popup>
-            )}
-          </Dialog.Viewport>
-        </Dialog.Portal>
-      </Dialog.Root>
+            </Dialog.Viewport>
+          </Dialog.Portal>
+        </Dialog.Root>
+      )}
     </div>
   );
 }

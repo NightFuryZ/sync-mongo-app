@@ -153,10 +153,11 @@ export function ConnectionsScreen() {
       setEditingProfile(null);
       setIsAdding(false);
       setError(null);
-    } catch {
+    } catch (caughtError) {
       setError(
         "Could not save this connection. Check that the operating system credential store is available, then try again."
       );
+      throw caughtError;
     }
   }
 

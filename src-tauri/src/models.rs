@@ -61,7 +61,7 @@ pub struct ConnectionProfile {
     pub username: Option<String>,
     pub password: Option<String>,
     pub auth_source: Option<String>,
-    pub auth_mechanism: Option<String>, // "SCRAM-SHA-1" | "SCRAM-SHA-256" | "X509"
+    pub auth_mechanism: Option<String>, // "SCRAM-SHA-1" | "SCRAM-SHA-256" | "MONGODB-X509"
     pub direct_connection: bool,
     pub tls: bool,
     pub tls_ca_cert: Option<String>,
@@ -222,11 +222,141 @@ impl ConnectionProfileInput {
                 }),
         }
     }
+
+    pub fn can_reuse_stored_secrets_from(&self, existing: &ConnectionProfile) -> bool {
+        let reuses_mongodb_password = existing.password.is_some() && !self.replace_password;
+        let reuses_raw_uri = existing.raw_uri.is_some() && !self.replace_raw_uri;
+        let reuses_ssh_password = self.profile.ssh_tunnel.is_some()
+            && existing
+                .ssh_tunnel
+                .as_ref()
+                .is_some_and(|tunnel| tunnel.password.is_some())
+            && !self.replace_ssh_password;
+        let reuses_ssh_passphrase = self.profile.ssh_tunnel.is_some()
+            && existing
+                .ssh_tunnel
+                .as_ref()
+                .is_some_and(|tunnel| tunnel.private_key_passphrase.is_some())
+            && !self.replace_ssh_private_key_passphrase;
+        let reuses_ssh_agent = self
+            .profile
+            .ssh_tunnel
+            .as_ref()
+            .is_some_and(|tunnel| tunnel.auth_method == SshAuthMethod::Agent)
+            && existing
+                .ssh_tunnel
+                .as_ref()
+                .is_some_and(|tunnel| tunnel.auth_method == SshAuthMethod::Agent);
+        let reuses_stored_secret = reuses_mongodb_password
+            || reuses_raw_uri
+            || reuses_ssh_password
+            || reuses_ssh_passphrase
+            || reuses_ssh_agent;
+
+        !reuses_stored_secret || self.has_same_connection_scope(existing)
+    }
+
+    fn has_same_connection_scope(&self, existing: &ConnectionProfile) -> bool {
+        let candidate = &self.profile;
+        candidate.host == existing.host
+            && candidate.port == existing.port
+            && candidate.database == existing.database
+            && candidate.username == existing.username
+            && candidate.auth_source == existing.auth_source
+            && candidate.auth_mechanism == existing.auth_mechanism
+            && candidate.direct_connection == existing.direct_connection
+            && candidate.tls == existing.tls
+            && candidate.tls_ca_cert == existing.tls_ca_cert
+            && candidate.tls_client_cert == existing.tls_client_cert
+            && candidate.replica_set == existing.replica_set
+            && candidate.connect_timeout_ms == existing.connect_timeout_ms
+            && candidate.socket_timeout_ms == existing.socket_timeout_ms
+            && ssh_scope_matches(candidate.ssh_tunnel.as_ref(), existing.ssh_tunnel.as_ref())
+    }
+}
+
+fn ssh_scope_matches(
+    candidate: Option<&SshTunnelView>,
+    existing: Option<&SshTunnelConfig>,
+) -> bool {
+    match (candidate, existing) {
+        (None, None) => true,
+        (Some(candidate), Some(existing)) => {
+            candidate.host == existing.host
+                && candidate.port == existing.port
+                && candidate.username == existing.username
+                && candidate.auth_method == existing.auth_method
+                && candidate.use_ssh_config == existing.use_ssh_config
+                && candidate.private_key_path == existing.private_key_path
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]
 mod connection_profile_tests {
     use super::*;
+
+    fn input_with_stored_password() -> (ConnectionProfile, ConnectionProfileInput) {
+        let existing = ConnectionProfile {
+            id: "profile-1".into(),
+            name: "Production".into(),
+            host: "db.example.com".into(),
+            port: 27017,
+            database: "app".into(),
+            username: Some("sync-user".into()),
+            password: Some("secret".into()),
+            auth_source: Some("admin".into()),
+            auth_mechanism: Some("SCRAM-SHA-256".into()),
+            direct_connection: false,
+            tls: true,
+            tls_ca_cert: None,
+            tls_client_cert: None,
+            replica_set: None,
+            connect_timeout_ms: None,
+            socket_timeout_ms: None,
+            raw_uri: None,
+            ssh_tunnel: None,
+        };
+        let input = ConnectionProfileInput::from_view(ConnectionProfileView::from(&existing));
+        (existing, input)
+    }
+
+    #[test]
+    fn stored_secrets_cannot_be_reused_for_a_different_connection_scope() {
+        let (existing, mut input) = input_with_stored_password();
+        input.profile.host = "attacker.example.com".into();
+
+        assert!(!input.can_reuse_stored_secrets_from(&existing));
+    }
+
+    #[test]
+    fn stored_secrets_can_be_reused_when_only_the_profile_name_changes() {
+        let (existing, mut input) = input_with_stored_password();
+        input.profile.name = "Renamed production".into();
+
+        assert!(input.can_reuse_stored_secrets_from(&existing));
+    }
+
+    #[test]
+    fn ssh_agent_cannot_be_reused_for_a_different_tunnel_scope() {
+        let (mut existing, _) = input_with_stored_password();
+        existing.password = None;
+        existing.ssh_tunnel = Some(SshTunnelConfig {
+            host: "bastion.example.com".into(),
+            port: 22,
+            username: "deploy".into(),
+            auth_method: SshAuthMethod::Agent,
+            use_ssh_config: false,
+            private_key_path: None,
+            password: None,
+            private_key_passphrase: None,
+        });
+        let mut input = ConnectionProfileInput::from_view(ConnectionProfileView::from(&existing));
+        input.profile.ssh_tunnel.as_mut().unwrap().host = "attacker.example.com".into();
+
+        assert!(!input.can_reuse_stored_secrets_from(&existing));
+    }
 
     #[test]
     fn profile_view_never_contains_connection_secrets() {

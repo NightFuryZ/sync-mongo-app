@@ -20,6 +20,7 @@ pub fn run() {
             commands::connections::save_profile,
             commands::connections::delete_profile,
             commands::connections::test_connection,
+            commands::connections::test_connection_input,
             commands::connections::list_databases,
             commands::connections::list_collections,
             commands::diff::start_diff,

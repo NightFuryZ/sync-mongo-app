@@ -7,7 +7,7 @@ interface ConnectionDrawerProps {
   open: boolean;
   profile: ConnectionProfile | null;
   onOpenChange: (open: boolean) => void;
-  onSave: (profile: ConnectionProfileInput) => void;
+  onSave: (profile: ConnectionProfileInput) => Promise<void> | void;
 }
 
 export function ConnectionDrawer({

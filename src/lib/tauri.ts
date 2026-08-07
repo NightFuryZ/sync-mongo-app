@@ -14,6 +14,8 @@ export const api = {
   getProfiles: () => invoke<ConnectionProfile[]>("get_profiles"),
   saveProfile: (profile: ConnectionProfileInput) =>
     invoke<ConnectionProfile[]>("save_profile", { profile }),
+  testConnectionInput: (profile: ConnectionProfileInput) =>
+    invoke<ConnectionTestResult>("test_connection_input", { profile }),
   deleteProfile: (id: string) =>
     invoke<ConnectionProfile[]>("delete_profile", { id }),
   testConnection: (profileId: string) =>

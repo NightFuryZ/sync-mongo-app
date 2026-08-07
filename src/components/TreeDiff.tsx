@@ -1,8 +1,8 @@
 import { formatBsonValueRecursive, isBsonWrapper } from "@/lib/bsonDisplay";
 
 interface TreeDiffProps {
-  sourceDoc: Record<string, unknown>;
-  targetDoc: Record<string, unknown>;
+  currentDoc: Record<string, unknown>;
+  desiredDoc: Record<string, unknown>;
 }
 
 function renderValue(val: unknown): string {
@@ -10,48 +10,49 @@ function renderValue(val: unknown): string {
 }
 
 function TreeDiffNode({
-  sourceDoc,
-  targetDoc,
+  currentDoc,
+  desiredDoc,
   depth,
 }: {
-  sourceDoc: Record<string, unknown>;
-  targetDoc: Record<string, unknown>;
+  currentDoc: Record<string, unknown>;
+  desiredDoc: Record<string, unknown>;
   depth: number;
 }) {
   const MAX_DEPTH = 3;
   const allKeys = Array.from(
-    new Set([...Object.keys(sourceDoc), ...Object.keys(targetDoc)])
+    new Set([...Object.keys(currentDoc), ...Object.keys(desiredDoc)])
   );
 
   return (
     <div style={{ paddingLeft: depth * 12 }}>
       {allKeys.map((key) => {
-        const inSrc = key in sourceDoc;
-        const inTgt = key in targetDoc;
-        const srcVal = sourceDoc[key];
-        const tgtVal = targetDoc[key];
+        const inCurrent = key in currentDoc;
+        const inDesired = key in desiredDoc;
+        const currentValue = currentDoc[key];
+        const desiredValue = desiredDoc[key];
 
-        if (inSrc && !inTgt) {
+        if (inCurrent && !inDesired) {
           return (
             <div key={key} className="text-red-500 line-through py-0.5">
-              🔴 {key}: {renderValue(srcVal)}
+              🔴 {key}: {renderValue(currentValue)}
             </div>
           );
         }
 
-        if (!inSrc && inTgt) {
+        if (!inCurrent && inDesired) {
           return (
             <div key={key} className="text-green-500 py-0.5">
-              🟢 {key}: {renderValue(tgtVal)}
+              🟢 {key}: {renderValue(desiredValue)}
             </div>
           );
         }
 
-        const same = JSON.stringify(srcVal) === JSON.stringify(tgtVal);
+        const same =
+          JSON.stringify(currentValue) === JSON.stringify(desiredValue);
         if (same) {
           return (
             <div key={key} className="text-muted-foreground py-0.5">
-              {key}: {renderValue(srcVal)}
+              {key}: {renderValue(currentValue)}
             </div>
           );
         }
@@ -60,21 +61,21 @@ function TreeDiffNode({
         // But treat BSON wrappers as leaf values
         if (
           depth < MAX_DEPTH &&
-          typeof srcVal === "object" &&
-          srcVal !== null &&
-          !Array.isArray(srcVal) &&
-          !isBsonWrapper(srcVal) &&
-          typeof tgtVal === "object" &&
-          tgtVal !== null &&
-          !Array.isArray(tgtVal) &&
-          !isBsonWrapper(tgtVal)
+          typeof currentValue === "object" &&
+          currentValue !== null &&
+          !Array.isArray(currentValue) &&
+          !isBsonWrapper(currentValue) &&
+          typeof desiredValue === "object" &&
+          desiredValue !== null &&
+          !Array.isArray(desiredValue) &&
+          !isBsonWrapper(desiredValue)
         ) {
           return (
             <div key={key} className="py-0.5">
               <span className="text-yellow-500 font-semibold">🟡 {key}:</span>
               <TreeDiffNode
-                sourceDoc={srcVal as Record<string, unknown>}
-                targetDoc={tgtVal as Record<string, unknown>}
+                currentDoc={currentValue as Record<string, unknown>}
+                desiredDoc={desiredValue as Record<string, unknown>}
                 depth={depth + 1}
               />
             </div>
@@ -84,9 +85,9 @@ function TreeDiffNode({
         return (
           <div key={key} className="py-0.5">
             <span className="text-muted-foreground">{key}: </span>
-            <span className="text-red-500 line-through mr-1">{renderValue(srcVal)}</span>
+            <span className="text-red-500 line-through mr-1">{renderValue(currentValue)}</span>
             <span className="text-muted-foreground mr-1">→</span>
-            <span className="text-green-500">{renderValue(tgtVal)}</span>
+            <span className="text-green-500">{renderValue(desiredValue)}</span>
             <span className="ml-1">🟡</span>
           </div>
         );
@@ -95,10 +96,10 @@ function TreeDiffNode({
   );
 }
 
-export function TreeDiff({ sourceDoc, targetDoc }: TreeDiffProps) {
+export function TreeDiff({ currentDoc, desiredDoc }: TreeDiffProps) {
   return (
     <div className="font-mono text-xs bg-muted rounded p-3 overflow-auto max-h-96 border">
-      <TreeDiffNode sourceDoc={sourceDoc} targetDoc={targetDoc} depth={0} />
+      <TreeDiffNode currentDoc={currentDoc} desiredDoc={desiredDoc} depth={0} />
     </div>
   );
 }

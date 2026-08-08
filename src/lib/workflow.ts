@@ -12,6 +12,7 @@ export interface WorkflowSnapshot {
   sourceDatabase: string;
   targetDatabase: string;
   selectedCollections: string[];
+  incompleteMappingCount: number;
   completedDiffCollections: string[];
 }
 
@@ -77,8 +78,19 @@ function isConfigurationReady(snapshot: WorkflowSnapshot) {
       snapshot.targetProfile &&
       snapshot.sourceDatabase &&
       snapshot.targetDatabase &&
-      snapshot.selectedCollections.length > 0
+      snapshot.selectedCollections.length > 0 &&
+      snapshot.incompleteMappingCount === 0
   );
+}
+
+function getConfigurationBlockedReason(snapshot: WorkflowSnapshot) {
+  if (snapshot.incompleteMappingCount > 0) {
+    return `Complete ${snapshot.incompleteMappingCount} selected collection mapping${
+      snapshot.incompleteMappingCount === 1 ? "" : "s"
+    } first.`;
+  }
+
+  return "Choose source and target connections, databases, and collections first.";
 }
 
 function isDiffReviewComplete(snapshot: WorkflowSnapshot) {
@@ -124,8 +136,7 @@ export function buildWorkflowSteps(
         : {
             ...definition,
             state: "locked",
-            blockedReason:
-              "Choose source and target connections, databases, and collections first.",
+            blockedReason: getConfigurationBlockedReason(snapshot),
           };
     }
 

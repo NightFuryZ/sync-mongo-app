@@ -315,7 +315,12 @@ function SummaryMetric({ label, value, tone, emphasis = false }: { label: string
   return (
     <div className={cn("rounded-xl border bg-card px-4 py-3 shadow-xs", emphasis && "border-primary/20 bg-primary/5")}>
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
-      <p className={cn("mt-1 text-xl font-semibold", tone)}>{value} {label === "Selected operations" ? "Selected operations" : ""}</p>
+      <p
+        aria-label={`${label}: ${value}`}
+        className={cn("mt-1 text-xl font-semibold", tone)}
+      >
+        {value}
+      </p>
     </div>
   );
 }

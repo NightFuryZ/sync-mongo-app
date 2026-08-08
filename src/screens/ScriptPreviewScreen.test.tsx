@@ -53,7 +53,9 @@ describe("ScriptPreviewScreen", () => {
     );
 
     expect(screen.getByRole("heading", { name: /preview sync script/i })).toBeInTheDocument();
-    expect(await screen.findByText("6 Selected operations")).toBeVisible();
+    expect(
+      await screen.findByLabelText("Selected operations: 6")
+    ).toHaveTextContent(/^6$/);
     expect(screen.getByText("Production mirror")).toBeVisible();
     expect(screen.getByText("app")).toBeVisible();
     expect(screen.getByRole("button", { name: /review and run sync/i })).toBeEnabled();

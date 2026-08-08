@@ -11,6 +11,7 @@ const emptySnapshot: WorkflowSnapshot = {
   sourceDatabase: "",
   targetDatabase: "",
   selectedCollections: [],
+  incompleteMappingCount: 0,
   completedDiffCollections: [],
 };
 
@@ -20,6 +21,7 @@ const configuredSnapshot: WorkflowSnapshot = {
   sourceDatabase: "app_prod",
   targetDatabase: "app_staging",
   selectedCollections: ["users", "orders"],
+  incompleteMappingCount: 0,
   completedDiffCollections: [],
 };
 
@@ -46,6 +48,17 @@ describe("buildWorkflowSteps", () => {
       ["execute", "locked"],
     ]);
     expect(steps[2].blockedReason).toMatch(/review/i);
+  });
+
+  it("keeps Review locked while a selected collection mapping is incomplete", () => {
+    const steps = buildWorkflowSteps("/sync-config", {
+      ...configuredSnapshot,
+      incompleteMappingCount: 1,
+    });
+
+    expect(steps[0].state).toBe("current");
+    expect(steps[1].state).toBe("locked");
+    expect(steps[1].blockedReason).toMatch(/mapping/i);
   });
 
   it("unlocks Script and Execute after all selected collections were reviewed", () => {

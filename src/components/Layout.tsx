@@ -25,15 +25,17 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const collections = useSyncConfigStore((state) => state.collections);
   const summaries = useDiffResultsStore((state) => state.summaries);
   const isWorkflowRoute = pathname !== "/";
+  const selectedCollections = collections.filter(({ selected }) => selected);
 
   const workflowSnapshot: WorkflowSnapshot = {
     sourceProfile,
     targetProfile,
     sourceDatabase,
     targetDatabase,
-    selectedCollections: collections
-      .filter(({ selected }) => selected)
-      .map(({ name }) => name),
+    selectedCollections: selectedCollections.map(({ name }) => name),
+    incompleteMappingCount: selectedCollections.filter(
+      ({ targetName, keyField }) => !targetName.trim() || !keyField.trim()
+    ).length,
     completedDiffCollections: Object.keys(summaries),
   };
   const steps = buildWorkflowSteps(pathname, workflowSnapshot);

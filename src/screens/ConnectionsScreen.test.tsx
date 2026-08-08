@@ -83,6 +83,25 @@ describe("ConnectionsScreen", () => {
     ).toBeEnabled();
   });
 
+  it("filters connections by name, endpoint, database, or tunnel host", async () => {
+    apiMocks.getProfiles.mockResolvedValue([directProfile, sshProfile]);
+    const user = userEvent.setup();
+    render(<ConnectionsScreen />);
+
+    const search = await screen.findByRole("searchbox", {
+      name: /search connections/i,
+    });
+    await user.type(search, "prod-bastion");
+
+    expect(screen.getByText("Production through bastion")).toBeVisible();
+    expect(screen.queryByText("Local development")).not.toBeInTheDocument();
+    expect(screen.getByText(/1 of 2 connections/i)).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /clear search/i }));
+    expect(screen.getByText("Local development")).toBeVisible();
+    expect(screen.getByText("Production through bastion")).toBeVisible();
+  });
+
   it("opens the connection form in a modal drawer", async () => {
     apiMocks.getProfiles.mockResolvedValue([]);
     const user = userEvent.setup();

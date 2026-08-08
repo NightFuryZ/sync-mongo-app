@@ -196,7 +196,7 @@ export function ExecutionLogScreen() {
     <div className="flex h-full flex-col gap-5">
       <PageHeader
         title="Execute sync"
-        description="Confirm the exact target and selected operations before Sync Mongo applies any changes."
+        description="Confirm the exact target and selected operations before Mongo Sync applies any changes."
         actions={
           <Button size="lg" onClick={() => setIsConfirmOpen(true)} disabled={isRunning || isDone || !canStartSync}>
             <Play />
@@ -322,7 +322,22 @@ function StatusMessage({ tone, message }: { tone: "warning" | "error"; message: 
 }
 
 function SummaryMetric({ label, value, tone, emphasis = false }: { label: string; value: number; tone?: string; emphasis?: boolean }) {
-  return <div className={cn("rounded-lg border bg-background px-3 py-2", emphasis && "border-primary/20 bg-primary/5")}><p className="text-xs text-muted-foreground">{label}</p><p className={cn("mt-0.5 text-lg font-semibold", tone)}>{value} {label === "Selected operations" ? "Selected operations" : ""}</p></div>;
+  return (
+    <div
+      className={cn(
+        "rounded-lg border bg-background px-3 py-2",
+        emphasis && "border-primary/20 bg-primary/5"
+      )}
+    >
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p
+        aria-label={`${label}: ${value}`}
+        className={cn("mt-0.5 text-lg font-semibold", tone)}
+      >
+        {value}
+      </p>
+    </div>
+  );
 }
 
 function kindLabel(kind: SyncResultEvent["kind"]) {

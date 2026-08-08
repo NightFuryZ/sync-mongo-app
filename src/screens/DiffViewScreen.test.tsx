@@ -94,9 +94,9 @@ describe("DiffViewScreen", () => {
     expect(
       screen.getByRole("heading", { name: /review changes/i })
     ).toBeInTheDocument();
-    expect(await screen.findByText("12 Added")).toBeVisible();
-    expect(screen.getByText("4 Modified")).toBeVisible();
-    expect(screen.getByText("2 Deleted")).toBeVisible();
+    expect(await screen.findByLabelText("Added: 12")).toHaveTextContent(/^12$/);
+    expect(screen.getByLabelText("Modified: 4")).toHaveTextContent(/^4$/);
+    expect(screen.getByLabelText("Deleted: 2")).toHaveTextContent(/^2$/);
     expect(screen.getByRole("tab", { name: /users/i })).toHaveAttribute(
       "aria-selected",
       "true"

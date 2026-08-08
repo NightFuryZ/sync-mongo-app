@@ -70,62 +70,88 @@ function RefFieldEditor({ collection, sourceCollections, onSave }: RefFieldEdito
     <div>
       <button
         type="button"
-        className="text-xs text-primary underline-offset-2 hover:underline"
+        aria-expanded={open}
+        className="inline-flex h-7 items-center rounded-md border bg-background px-2 text-xs font-medium text-primary transition-colors hover:bg-primary/5 focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => setOpen(!open)}
       >
         {refs.length > 0 ? `${refs.length} ref(s)` : "Add refs"}
       </button>
       {open && (
-        <div className="ref-editor mt-1 flex flex-col gap-1 rounded border border-border bg-background p-2">
+        <div className="ref-editor mt-2 min-w-[30rem] space-y-3 rounded-lg border border-border bg-muted/30 p-3 shadow-sm">
+          <div>
+            <p className="text-xs font-semibold">Reference lookups</p>
+            <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
+              Show readable fields from a related source collection while reviewing changes.
+            </p>
+          </div>
           {refs.map((r, i) => (
-            <div key={r._key} className="flex items-center gap-1 text-xs">
-              <input
-                placeholder="local field"
-                value={r.localField}
-                onChange={(e) => updateRef(i, { localField: e.target.value })}
-                className="w-24 rounded border border-border px-1 py-0.5"
-              />
-              <span className="text-muted-foreground">→</span>
-              <select
-                value={r.refCollection}
-                onChange={(e) => updateRef(i, { refCollection: e.target.value })}
-                className="w-28 rounded border border-border px-1 py-0.5"
-              >
-                <option value="">-- collection --</option>
-                {sourceCollections.map((c) => (
-                  <option key={c} value={c}>{c}</option>
-                ))}
-              </select>
-              <input
-                placeholder="display fields (comma)"
-                value={r.displayFieldsText}
-                onChange={(e) => updateRef(i, { displayFieldsText: e.target.value })}
-                className="w-36 rounded border border-border px-1 py-0.5"
-              />
-              <button
-                type="button"
-                className="text-destructive hover:opacity-80"
-                onClick={() => removeRef(i)}
-              >
-                ✕
-              </button>
+            <div key={r._key} className="rounded-lg border bg-background p-3">
+              <div className="grid grid-cols-[1fr_1fr_1.4fr_auto] items-end gap-2 text-xs">
+                <label className="grid gap-1">
+                  <span className="font-medium text-muted-foreground">Local field</span>
+                  <input
+                    placeholder="local field"
+                    value={r.localField}
+                    onChange={(e) => updateRef(i, { localField: e.target.value })}
+                    className="h-8 min-w-0 rounded-md border border-border bg-background px-2"
+                  />
+                </label>
+                <label className="grid gap-1">
+                  <span className="font-medium text-muted-foreground">Related collection</span>
+                  <select
+                    value={r.refCollection}
+                    onChange={(e) => updateRef(i, { refCollection: e.target.value })}
+                    className="h-8 min-w-0 rounded-md border border-border bg-background px-2"
+                  >
+                    <option value="">Choose collection</option>
+                    {sourceCollections.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="grid gap-1">
+                  <span className="font-medium text-muted-foreground">Display fields</span>
+                  <input
+                    placeholder="display fields (comma)"
+                    value={r.displayFieldsText}
+                    onChange={(e) => updateRef(i, { displayFieldsText: e.target.value })}
+                    className="h-8 min-w-0 rounded-md border border-border bg-background px-2"
+                  />
+                </label>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="destructive"
+                  aria-label={`Remove reference ${i + 1}`}
+                  title={`Remove reference ${i + 1}`}
+                  onClick={() => removeRef(i)}
+                >
+                  ×
+                </Button>
+              </div>
             </div>
           ))}
-          <div className="flex gap-2 pt-1">
-            <button
+          {refs.length === 0 && (
+            <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+              No reference lookups configured for this collection.
+            </p>
+          )}
+          <div className="flex items-center justify-between gap-2 border-t pt-3">
+            <Button
               type="button"
-              className="text-xs text-primary underline-offset-2 hover:underline"
+              size="sm"
+              variant="outline"
               onClick={addRef}
             >
               + Add reference
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="text-xs text-primary underline-offset-2 hover:underline"
+              size="sm"
               onClick={handleSave}
             >
               Save
-            </button>
+            </Button>
           </div>
         </div>
       )}
@@ -161,12 +187,90 @@ export function SyncConfigScreen() {
   const [loadingSourceDbs, setLoadingSourceDbs] = useState(false);
   const [loadingTargetDbs, setLoadingTargetDbs] = useState(false);
   const [loadingCols, setLoadingCols] = useState(false);
+  const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [diffLoading, setDiffLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const restoredOptionsRef = useRef(false);
 
   useEffect(() => {
-    void connectionsStore.load();
+    let isMounted = true;
+    void connectionsStore
+      .load()
+      .catch(() => {
+        if (isMounted) {
+          setError(
+            "Could not load saved connections. Return to Connections and try again."
+          );
+        }
+      })
+      .finally(() => {
+        if (isMounted) setConnectionsLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (restoredOptionsRef.current) return;
+    restoredOptionsRef.current = true;
+
+    let isMounted = true;
+
+    async function restoreSavedOptions() {
+      const tasks: Promise<void>[] = [];
+
+      if (sourceProfile) {
+        setLoadingSourceDbs(true);
+        tasks.push(
+          api
+            .listDatabases(sourceProfile.id)
+            .then((databases) => {
+              if (isMounted) setSourceDatabases(databases);
+            })
+            .finally(() => {
+              if (isMounted) setLoadingSourceDbs(false);
+            })
+        );
+      }
+
+      if (targetProfile) {
+        setLoadingTargetDbs(true);
+        tasks.push(
+          api
+            .listDatabases(targetProfile.id)
+            .then((databases) => {
+              if (isMounted) setTargetDatabases(databases);
+            })
+            .finally(() => {
+              if (isMounted) setLoadingTargetDbs(false);
+            })
+        );
+
+        if (targetDatabase) {
+          tasks.push(
+            api.listCollections(targetProfile.id, targetDatabase).then((names) => {
+              if (isMounted) setTargetCollections(names);
+            })
+          );
+        }
+      }
+
+      const results = await Promise.allSettled(tasks);
+      if (isMounted && results.some(({ status }) => status === "rejected")) {
+        setError(
+          "Some saved connection options could not be refreshed. Re-select the affected connection to try again."
+        );
+      }
+    }
+
+    void restoreSavedOptions();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []); // Restore the saved route once when returning to this screen.
 
   function invalidateReview() {
     clearAll();
@@ -352,6 +456,27 @@ export function SyncConfigScreen() {
               </p>
             </div>
           </div>
+          {!connectionsLoading && connectionsStore.profiles.length === 0 && (
+            <div
+              role="status"
+              className="mb-4 flex flex-col gap-3 rounded-lg border border-amber-600/20 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200 sm:flex-row sm:items-center"
+            >
+              <CircleAlert className="size-4 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="font-medium">No saved connections</p>
+                <p className="mt-0.5 text-xs opacity-80">
+                  Add at least one MongoDB endpoint before configuring a sync.
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => navigate("/")}
+              >
+                Manage connections
+              </Button>
+            </div>
+          )}
           <div className="grid gap-4 md:grid-cols-2">
           <div className="rounded-lg border bg-background p-4">
             <div className="mb-3 flex items-center justify-between">
@@ -363,6 +488,7 @@ export function SyncConfigScreen() {
               aria-label="Source connection"
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               value={sourceProfile?.id ?? ""}
+              disabled={connectionsLoading || connectionsStore.profiles.length === 0}
               onChange={(e) => handleSourceChange(e.target.value)}
             >
               <option value="">— select source —</option>
@@ -384,6 +510,7 @@ export function SyncConfigScreen() {
               aria-label="Target connection"
               className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               value={targetProfile?.id ?? ""}
+              disabled={connectionsLoading || connectionsStore.profiles.length === 0}
               onChange={(e) => handleTargetChange(e.target.value)}
             >
               <option value="">— select target —</option>

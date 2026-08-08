@@ -49,6 +49,8 @@ describe("SyncConfigScreen", () => {
       profile("source", "Production"),
       profile("target", "Staging"),
     ]);
+    apiMocks.listDatabases.mockResolvedValue([]);
+    apiMocks.listCollections.mockResolvedValue([]);
     useConnectionsStore.setState({ profiles: [] });
     useSyncConfigStore.setState({
       sourceProfile: null,
@@ -70,6 +72,18 @@ describe("SyncConfigScreen", () => {
     expect(
       screen.getByRole("button", { name: /review changes/i })
     ).toBeDisabled();
+  });
+
+  it("guides users to connection management when no profiles are available", async () => {
+    apiMocks.getProfiles.mockResolvedValue([]);
+    renderScreen();
+
+    expect(await screen.findByText(/no saved connections/i)).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /manage connections/i })
+    ).toBeEnabled();
+    expect(screen.getByLabelText("Source connection")).toBeDisabled();
+    expect(screen.getByLabelText("Target connection")).toBeDisabled();
   });
 
   it("preserves comma-separated display fields while typing a reference", async () => {
@@ -107,6 +121,9 @@ describe("SyncConfigScreen", () => {
     await user.click(addRefs);
     const editor = addRefs.parentElement!;
     await user.click(within(editor).getByRole("button", { name: "+ Add reference" }));
+    expect(
+      within(editor).getByRole("button", { name: /remove reference 1/i })
+    ).toBeVisible();
     await user.type(within(editor).getByPlaceholderText("local field"), "app_id");
     await user.selectOptions(within(editor).getByRole("combobox"), "appList");
     await user.type(
@@ -122,5 +139,42 @@ describe("SyncConfigScreen", () => {
         displayFields: ["name", "version"],
       },
     ]);
+  });
+
+  it("restores database and target collection options when returning to configuration", async () => {
+    const source = profile("source", "Production");
+    const target = profile("target", "Staging");
+    apiMocks.getProfiles.mockResolvedValue([source, target]);
+    apiMocks.listDatabases.mockImplementation((profileId: string) =>
+      Promise.resolve(profileId === "source" ? ["sourceDb"] : ["targetDb"])
+    );
+    apiMocks.listCollections.mockResolvedValue(["users", "users_archive"]);
+    useConnectionsStore.setState({ profiles: [source, target] });
+    useSyncConfigStore.setState({
+      sourceProfile: source,
+      targetProfile: target,
+      sourceDatabase: "sourceDb",
+      targetDatabase: "targetDb",
+      collections: [
+        {
+          name: "users",
+          targetName: "users",
+          keyField: "_id",
+          selected: true,
+          referenceFields: [],
+        },
+      ],
+    });
+
+    renderScreen();
+
+    expect(await screen.findByRole("option", { name: "sourceDb" })).toBeVisible();
+    expect(screen.getByRole("option", { name: "targetDb" })).toBeVisible();
+    expect(
+      await screen.findByRole("option", { name: "users_archive" })
+    ).toBeVisible();
+    expect(apiMocks.listDatabases).toHaveBeenCalledWith("source");
+    expect(apiMocks.listDatabases).toHaveBeenCalledWith("target");
+    expect(apiMocks.listCollections).toHaveBeenCalledWith("target", "targetDb");
   });
 });

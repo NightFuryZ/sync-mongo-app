@@ -8,9 +8,11 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Search,
   Server,
   ShieldCheck,
   Trash2,
+  X,
   XCircle,
   Zap,
 } from "lucide-react";
@@ -118,6 +120,7 @@ export function ConnectionsScreen() {
   >({});
   const [error, setError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -146,6 +149,23 @@ export function ConnectionsScreen() {
     }),
     [store.profiles]
   );
+
+  const filteredProfiles = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase();
+    if (!query) return store.profiles;
+
+    return store.profiles.filter((profile) =>
+      [
+        profile.name,
+        profile.host,
+        profile.database,
+        profile.sshTunnel?.host,
+        profile.sshTunnel?.username,
+      ]
+        .filter(Boolean)
+        .some((value) => value?.toLocaleLowerCase().includes(query))
+    );
+  }, [searchQuery, store.profiles]);
 
   async function handleSave(profile: ConnectionProfileInput) {
     try {
@@ -272,15 +292,71 @@ export function ConnectionsScreen() {
               label="Connections"
             />
             <SummaryCard icon={Server} value={summary.ssh} label="SSH tunnels" />
-            <SummaryCard icon={ShieldCheck} value={summary.tls} label="TLS enabled" />
+            <SummaryCard
+              icon={ShieldCheck}
+              value={summary.tls}
+              label="TLS enabled"
+            />
           </section>
 
-          <ul className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {store.profiles.map((profile) => {
-              const testStatus = testStatuses[profile.id] ?? {
-                state: "idle" as const,
-              };
-              return (
+          <section
+            role="search"
+            aria-label="Search connections"
+            className="flex flex-col gap-3 rounded-xl border bg-card p-3 shadow-xs sm:flex-row sm:items-center"
+          >
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="search"
+                aria-label="Search connections"
+                placeholder="Search by name, host, database, or SSH tunnel…"
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                className="h-9 w-full rounded-lg border bg-background pl-9 pr-9 text-sm shadow-xs focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => setSearchQuery("")}
+                  className="absolute right-1.5 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+            <p
+              className="shrink-0 px-1 text-xs text-muted-foreground"
+              aria-live="polite"
+            >
+              {filteredProfiles.length} of {store.profiles.length} connections
+            </p>
+          </section>
+
+          {filteredProfiles.length === 0 ? (
+            <div className="rounded-xl border border-dashed bg-card px-6 py-10 text-center">
+              <Search className="mx-auto size-6 text-muted-foreground" />
+              <h2 className="mt-3 text-sm font-semibold">
+                No matching connections
+              </h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Try a different name, host, database, or tunnel endpoint.
+              </p>
+              <Button
+                className="mt-4"
+                variant="outline"
+                onClick={() => setSearchQuery("")}
+              >
+                Clear search
+              </Button>
+            </div>
+          ) : (
+            <ul className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              {filteredProfiles.map((profile) => {
+                const testStatus = testStatuses[profile.id] ?? {
+                  state: "idle" as const,
+                };
+                return (
                 <li
                   key={profile.id}
                   className="rounded-xl border bg-card p-5 shadow-xs transition-shadow hover:shadow-sm"
@@ -353,9 +429,10 @@ export function ConnectionsScreen() {
                     </div>
                   </div>
                 </li>
-              );
-            })}
-          </ul>
+                );
+              })}
+            </ul>
+          )}
         </>
       )}
 

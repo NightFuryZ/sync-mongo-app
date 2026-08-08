@@ -416,15 +416,30 @@ export function DiffViewScreen() {
           <section aria-label="Change summary" className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <div className="rounded-xl border bg-card px-4 py-3 shadow-xs">
               <p className="text-xs font-medium text-muted-foreground">Added</p>
-              <p className="mt-1 text-xl font-semibold text-emerald-700 dark:text-emerald-300">{metrics.added} Added</p>
+              <p
+                aria-label={`Added: ${metrics.added}`}
+                className="mt-1 text-xl font-semibold text-emerald-700 dark:text-emerald-300"
+              >
+                {metrics.added}
+              </p>
             </div>
             <div className="rounded-xl border bg-card px-4 py-3 shadow-xs">
               <p className="text-xs font-medium text-muted-foreground">Modified</p>
-              <p className="mt-1 text-xl font-semibold text-amber-700 dark:text-amber-300">{metrics.modified} Modified</p>
+              <p
+                aria-label={`Modified: ${metrics.modified}`}
+                className="mt-1 text-xl font-semibold text-amber-700 dark:text-amber-300"
+              >
+                {metrics.modified}
+              </p>
             </div>
             <div className="rounded-xl border bg-card px-4 py-3 shadow-xs">
               <p className="text-xs font-medium text-muted-foreground">Deleted</p>
-              <p className="mt-1 text-xl font-semibold text-destructive">{metrics.deleted} Deleted</p>
+              <p
+                aria-label={`Deleted: ${metrics.deleted}`}
+                className="mt-1 text-xl font-semibold text-destructive"
+              >
+                {metrics.deleted}
+              </p>
             </div>
             <div className="rounded-xl border bg-card px-4 py-3 shadow-xs">
               <p className="text-xs font-medium text-muted-foreground">Reviewed</p>

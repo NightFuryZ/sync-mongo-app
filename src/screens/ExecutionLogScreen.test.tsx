@@ -51,7 +51,9 @@ describe("ExecutionLogScreen", () => {
     );
 
     expect(screen.getByRole("heading", { name: /^execute sync$/i })).toBeInTheDocument();
-    expect(await screen.findByText("6 Selected operations")).toBeVisible();
+    expect(
+      await screen.findByLabelText("Selected operations: 6")
+    ).toHaveTextContent(/^6$/);
 
     fireEvent.click(screen.getByRole("button", { name: /review and run sync/i }));
 
@@ -81,7 +83,7 @@ describe("ExecutionLogScreen", () => {
       </MemoryRouter>
     );
 
-    await screen.findByText("6 Selected operations");
+    await screen.findByLabelText("Selected operations: 6");
     fireEvent.click(screen.getByRole("button", { name: /review and run sync/i }));
 
     expect(screen.getByText(/from 1 collection to the configured target/i)).toBeVisible();
